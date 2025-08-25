@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AuthPage from "./pages/AuthPage";
-import GamePage from "./pages/GamePage";
+import Lobby from "./pages/Lobby";
+import Baccarat from "./pages/Baccarat";
 
 export default function App() {
   return (
@@ -11,7 +12,15 @@ export default function App() {
           path="/"
           element={
             <RequireAuth>
-              <GamePage />
+              <Lobby />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/baccarat"
+          element={
+            <RequireAuth>
+              <Baccarat />
             </RequireAuth>
           }
         />
