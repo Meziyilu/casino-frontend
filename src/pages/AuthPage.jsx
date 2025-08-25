@@ -1,4 +1,3 @@
-// src/pages/AuthPage.jsx
 import { useState } from "react";
 import { post } from "../api";
 import { useNavigate } from "react-router-dom";
@@ -13,20 +12,23 @@ export default function AuthPage() {
   async function submit() {
     setMsg("");
     try {
-      const path = isLogin ? "/auth/login" : "/auth/register";
-      const res = await post(path, { username: acc.trim(), password: pw });
+      const primary = isLogin ? "/auth/login" : "/auth/register";
+      const legacy  = isLogin ? "/login"      : "/register"; // fallback 舊路徑
+      let res;
+      try {
+        res = await post(primary, { username: acc.trim(), password: pw });
+      } catch (e) {
+        if (e.status === 404) res = await post(legacy, { username: acc.trim(), password: pw });
+        else throw e;
+      }
       const token = res?.access_token;
       if (!token) throw new Error("登入回應異常（沒有 access_token）");
       localStorage.setItem("token", token);
       nav("/");
     } catch (e) {
-      if (e.status === 409 || /exists/i.test(e.message)) {
-        setMsg("此帳號已被註冊，請改用其他帳號或切換到登入");
-      } else if (e.status === 401) {
-        setMsg("帳號或密碼錯誤");
-      } else {
-        setMsg(e.message || "發生錯誤");
-      }
+      if (e.status === 409) setMsg("此帳號已被註冊，請改用其他帳號或切換到登入");
+      else if (e.status === 401) setMsg("帳號或密碼錯誤");
+      else setMsg(e.message || "發生錯誤");
     }
   }
 
