@@ -1,287 +1,149 @@
-// src/pages/Baccarat.jsx
-import { useEffect, useState } from "react";
-import { get, post } from "../api";
-import { useNavigate } from "react-router-dom";
-import BaccaratReveal from "../components/BaccaratReveal";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-const CHIPS = [10, 50, 100, 500, 1000];
-const SIDES = [
-  { key: "player", label: "閒", sub: "1:1", color: "#2b6cb0" },
-  { key: "tie",    label: "和", sub: "8:1", color: "#16a34a" },
-  { key: "banker", label: "莊", sub: "0.95:1", color: "#dc2626" },
-];
-const EXTRA = [
-  { key:"player_pair",  label:"閒對",   odds:"11:1" },
-  { key:"banker_pair",  label:"莊對",   odds:"11:1" },
-  { key:"any_pair",     label:"任意對", odds:"5:1"  },
-  { key:"perfect_pair", label:"完美對", odds:"25:1" },
-];
+/**
+ * 升級版開牌動畫（搭配 baccaratReveal.css）：
+ * - 3D 翻牌 + 陰影
+ * - 牌面清楚（角落 Rank + 花色、中央 Pip）
+ * - 勝利方金光 + 粒子
+ * - sticky 置頂顯示
+ */
+export default function BaccaratReveal({
+  visible,
+  winner,
+  playerTotal = 0,
+  bankerTotal = 0,
+  playerDraw3 = false,
+  bankerDraw3 = false,
+  durationMs = 15000,
+  bellSrc,
+  timings = { p1b1: 900, p2b2: 1900, p3: 2800, b3: 3300, glow: 3800 },
+  onFinish,
+}) {
+  const [phase, setPhase] = useState("idle");
+  const audioRef = useRef(null);
 
-export default function Baccarat() {
-  const nav = useNavigate();
-  const token = localStorage.getItem("token") || "";
-
-  const [me, setMe] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [balance, setBalance] = useState(null);
-
-  const [chip, setChip] = useState(100);
-  const [selectSide, setSelectSide] = useState("player");
-  const [extraSide, setExtraSide] = useState(null);
-  const [betAmount, setBetAmount] = useState(0);
-
-  const [history, setHistory] = useState([]);
-  const [current, setCurrent] = useState({ status: "idle", round_no: null, remain_sec: 0 });
-  const [remain, setRemain] = useState(0);
-  const [msg, setMsg] = useState("");
-
-  // 動畫參數
-  const defaultTiming = { p1b1:800, p2b2:1700, p3:2600, b3:3200, glow:3700 };
-  const [revealMs] = useState(() => Number(localStorage.getItem("revealMs") || 15000));
-  const [soundOn] = useState(() => localStorage.getItem("revealSoundOn") !== "0");
-
-  // 開牌動畫資料
-  const [revealData, setRevealData] = useState({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
-
-  // 首次載入
   useEffect(() => {
-    (async () => {
-      try {
-        const u = await get("/me", token);
-        setMe(u); setIsAdmin(!!u.is_admin);
-      } catch {
-        localStorage.removeItem("token");
-        nav("/auth");
-        return;
-      }
-      try { await refreshBalance(); } catch {}
-      try { await loadHistory(); } catch {}
-    })();
-  }, []);
+    if (!visible) { setPhase("idle"); return; }
+    setPhase("start");
 
-  // 每秒輪詢目前局況，捕捉「關單→出結果」觸發動畫
-  useEffect(() => {
-    let last = { round_no: null, status: null };
-    const t = setInterval(async () => {
-      try {
-        const c = await get("/rounds/current");
-        setCurrent(c);
-        setRemain(c.remain_sec ?? 0);
-
-        const justClosed = last.status === "open" && c.status === "closed";
-        const roundChanged = last.round_no !== null && c.round_no !== last.round_no;
-
-        if (justClosed || roundChanged || (c.status === "closed" && last.status !== "closed")) {
-          const hist = await get("/rounds/last10");
-          const top = hist.rows?.[0];
-          if (top && top.outcome) {
-            setRevealData({
-              show: true,
-              winner: top.outcome,
-              pt: top.player_total ?? 0,
-              bt: top.banker_total ?? 0,
-              p3: !!top.player_draw3,
-              b3: !!top.banker_draw3,
-            });
-          }
-        }
-
-        last = { round_no: c.round_no, status: c.status };
-      } catch {}
-    }, 1000);
-
-    return () => clearInterval(t);
-  }, []);
-
-  async function refreshBalance() {
-    const b = await get("/balance", token);
-    setBalance(b.balance);
-  }
-  async function loadHistory() {
-    const res = await get("/rounds/last10");
-    setHistory(res.rows || []);
-  }
-
-  function addChip(v) { setBetAmount((x) => Math.max(0, x + v)); }
-  function clearBet() { setBetAmount(0); setExtraSide(null); }
-
-  async function confirmBet() {
-    setMsg("");
-    if (current.status !== "open" || (remain ?? 0) <= 0) { setMsg("本局已鎖單或尚未開局"); return; }
-    if (betAmount <= 0) { setMsg("請選取籌碼與押注金額"); return; }
-    const targetSide = extraSide || selectSide;
-    try {
-      await post("/bet", { side: targetSide, amount: betAmount }, token);
-      await refreshBalance();
-      setMsg("下注成功！");
-      setBetAmount(0); setExtraSide(null);
-    } catch (e) {
-      if (e.status === 401) { localStorage.removeItem("token"); nav("/auth"); return; }
-      setMsg("下注失敗：" + (e.message || e));
-    } finally {
-      try { await loadHistory(); } catch {}
+    if (bellSrc) {
+      const a = new Audio(bellSrc);
+      audioRef.current = a;
+      a.volume = 0.85;
+      a.play().catch(()=>{});
     }
-  }
 
-  function logout() { localStorage.removeItem("token"); nav("/auth"); }
+    const t1 = setTimeout(() => setPhase("p1b1"), timings.p1b1);
+    const t2 = setTimeout(() => setPhase("p2b2"), timings.p2b2);
+    const t3 = setTimeout(() => setPhase(playerDraw3 ? "p3" : (bankerDraw3 ? "b3" : "glow")), timings.p3);
+    const t4 = setTimeout(() => setPhase(bankerDraw3 ? "b3" : "glow"), timings.b3);
+    const t5 = setTimeout(() => setPhase("glow"), timings.glow);
+    const t6 = setTimeout(() => onFinish && onFinish(), durationMs);
+
+    return () => [t1,t2,t3,t4,t5,t6].forEach(clearTimeout);
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const glowColor = winner === "player" ? "#2b6cb0" : winner === "banker" ? "#dc2626" : "#16a34a";
 
   return (
-    <main style={page}>
-      <header style={header}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <button onClick={() => nav("/")} style={btnOutline}>← 回大廳</button>
-          <h1 style={{ margin:0, fontSize:20 }}>百家樂</h1>
-        </div>
-        <div style={{ textAlign:"right" }}>
-          <div style={{ fontSize: 14 }}>玩家：{me?.username ?? "—"} {isAdmin && <span style={tag}>ADMIN</span>}</div>
-          <div style={{ fontSize: 14 }}>餘額：{balance ?? "—"}</div>
-          <button onClick={logout} style={{ ...btnOutline, marginTop: 8 }}>登出</button>
-        </div>
-      </header>
-
-      {/* ✅ 開牌動畫固定在下注面板上方（sticky + 漸層） */}
-      <BaccaratReveal
-        visible={revealData.show}
-        winner={revealData.winner}
-        playerTotal={revealData.pt}
-        bankerTotal={revealData.bt}
-        playerDraw3={revealData.p3}
-        bankerDraw3={revealData.b3}
-        durationMs={revealMs}
-        bellSrc={soundOn ? "/sounds/bell.mp3" : undefined}
-        timings={defaultTiming}
-        onFinish={async () => {
-          setRevealData({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
-          try { await loadHistory(); } catch {}
-          try { await refreshBalance(); } catch {}
-        }}
-      />
-
-      {/* 下注面板 */}
-      <section style={board}>
-        <div style={boardTop}>
-          <div>局號：<b>{current.round_no ?? "-"}</b></div>
-          <div>狀態：<b>{current.status}</b></div>
-          {current.status === "open" && <div>倒數：<b>{remain}s</b></div>}
+    <div className="brv__overlay">
+      <div className="brv__panel">
+        <div className="brv__titleRow">
+          <div className="brv__title">{phase === "glow" ? "結果" : "開獎中…"}</div>
+          <div className={`brv__shimmer ${phase==="glow" ? "run" : ""}`} />
         </div>
 
-        <div style={sideGrid}>
-          {SIDES.map((s) => (
-            <button key={s.key}
-              onClick={() => setSelectSide(s.key)}
-              style={{
-                ...sideBtn, borderColor:s.color,
-                background: selectSide === s.key ? s.color : "#fff",
-                color: selectSide === s.key ? "#fff" : s.color,
-              }}>
-              <div style={{ fontSize: 28, fontWeight: 800 }}>{s.label}</div>
-              <div style={{ fontSize: 12, opacity: 0.85 }}>{s.sub}</div>
-            </button>
-          ))}
+        <div className="brv__hands">
+          <Hand label="PLAYER" color="#2b6cb0" total={playerTotal} show3={playerDraw3} phase={phase} side="player" />
+          <Hand label="BANKER" color="#dc2626" total={bankerTotal} show3={bankerDraw3} phase={phase} side="banker" />
         </div>
 
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap: 8, marginTop: 10 }}>
-          {EXTRA.map(x => (
-            <button key={x.key}
-              onClick={() => setExtraSide(extraSide === x.key ? null : x.key)}
-              style={{
-                ...sideBtn, padding:"12px 6px",
-                background: extraSide===x.key ? "#111" : "#fff",
-                color: extraSide===x.key ? "#fff" : "#111",
-                borderColor: "#bbb"
-              }}>
-              <div style={{ fontSize:16, fontWeight:700 }}>{x.label}</div>
-              <div style={{ fontSize:12, opacity:0.85 }}>{x.odds}</div>
-            </button>
-          ))}
+        <div className="brv__result">
+          {phase === "glow"
+            ? <span>勝方：<b className="brv__winner">{(winner || "").toUpperCase()}</b></span>
+            : "翻牌進行中…"}
         </div>
 
-        <div style={chipRow}>
-          {CHIPS.map((c) => (
-            <div key={c} onClick={() => addChip(c)} onMouseEnter={() => setChip(c)}
-                 style={{ ...chipItem, boxShadow: chip === c ? "0 0 0 3px #111 inset" : "none" }}
-                 title={`+${c}`}>
-              {c >= 1000 ? `${c/1000}K` : c}
-            </div>
-          ))}
-          <div style={{ marginLeft: "auto", fontWeight: 700 }}>下注金額：{betAmount}</div>
-          <button onClick={clearBet} style={btnGhost}>取消</button>
-          <button onClick={confirmBet} style={btnPrimary}>確定下注</button>
-        </div>
-
-        {msg && <div style={{ marginTop: 8, color: /成功/.test(msg) ? "#16a34a" : "#dc2626" }}>{msg}</div>}
-      </section>
-
-      {/* 歷史區 */}
-      <section style={card}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>近十局</h2>
-          <button onClick={loadHistory} style={btnOutline}>重新整理</button>
-        </div>
-        <Roadmap rows={history} />
-        <table style={table}>
-          <thead>
-            <tr>
-              <th style={cell}>局號</th>
-              <th style={cell}>時間</th>
-              <th style={cell}>閒</th>
-              <th style={cell}>莊</th>
-              <th style={cell}>結果</th>
-            </tr>
-          </thead>
-          <tbody>
-            {history.map((r) => (
-              <tr key={r.round_no}>
-                <td style={cell}>{r.round_no}</td>
-                <td style={cell}>{r.opened_at?.replace("T", " ").slice(0, 19) || ""}</td>
-                <td style={cell}>{r.player_total ?? "-"}</td>
-                <td style={cell}>{r.banker_total ?? "-"}</td>
-                <td style={cell}>{r.outcome ?? "進行中"}</td>
-              </tr>
-            ))}
-            {history.length === 0 && <tr><td style={cell} colSpan={5}>尚無資料</td></tr>}
-          </tbody>
-        </table>
-      </section>
-    </main>
-  );
-}
-
-/* ====== 路紙（簡易大路） ====== */
-function Roadmap({ rows }) {
-  const seq = rows.slice().reverse().map(r => r.outcome).filter(Boolean);
-  const grid = Array.from({ length: 6 }, () => Array(12).fill(null));
-  let col=0, row=0, prev=seq[0];
-  for (let i=0;i<seq.length;i++){
-    const cur=seq[i];
-    if (i===0){ grid[row][col]=cur; continue; }
-    if (cur===prev && row<5){ row++; }
-    else { prev=cur; col++; row=0; if (col>11) break; }
-    grid[row][col]=cur;
-  }
-  const color = (o)=> o==="player"?"#2b6cb0":o==="banker"?"#dc2626":"#16a34a";
-  return (
-    <div style={{ display:"grid", gridTemplateColumns:"repeat(12,14px)", gap:2, padding:8, background:"#fafafa", borderRadius:8, margin:"8px 0" }}>
-      {grid.map((r,ri)=> r.map((cell,ci)=>(
-        <div key={ri+"-"+ci} style={{ width:14, height:14, border:"1px solid #eee", borderRadius:"50%", background: cell?color(cell):"transparent" }} />
-      )))}
+        {phase === "glow" && (
+          <div className="brv__glowWrap">
+            <div className="brv__glowBar" style={{ boxShadow: `0 0 26px 8px ${glowColor}` }} />
+            <Sparkles color={glowColor} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-/* ====== 樣式 ====== */
-const page   = { padding: 20, fontFamily: "ui-sans-serif, system-ui", background:"#f6f7fb", minHeight:"100vh" };
-const header = { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 };
-const board  = { border: "1px solid #eee", borderRadius: 12, padding: 16, background: "#fff", marginBottom: 16, boxShadow:"0 2px 10px rgba(0,0,0,0.03)" };
-const boardTop = { display:"flex", gap:16, alignItems:"center", marginBottom: 10 };
-const sideGrid = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 };
-const sideBtn  = { border: "2px solid #ccc", borderRadius: 12, padding: "18px 8px", cursor: "pointer", background: "#fff" };
-const chipRow  = { display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" };
-const chipItem = { width: 56, height: 56, borderRadius: "50%", background: "#fff", border: "1px solid #ddd", display: "grid", placeItems: "center", cursor: "pointer", fontWeight: 700 };
-const card   = { border: "1px solid #eee", borderRadius: 12, padding: 16, background: "#fff", marginBottom: 16, boxShadow:"0 2px 10px rgba(0,0,0,0.03)" };
-const table  = { width: "100%", borderCollapse: "collapse", marginTop: 8 };
-const cell   = { borderBottom: "1px solid #eee", padding: "8px 6px", textAlign: "left", fontSize: 14 };
-const btnPrimary = { padding: "10px 14px", background: "#111", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer" };
-const btnOutline = { padding: "8px 12px", background: "transparent", color: "#111", border: "1px solid #ccc", borderRadius: 10, cursor: "pointer" };
-const btnGhost   = { padding: "10px 14px", background: "transparent", color: "#111", border: "1px solid #ddd", borderRadius: 10, cursor: "pointer" };
-const tag = { marginLeft: 6, fontSize: 10, background:"#111", color:"#fff", borderRadius: 6, padding:"2px 6px" };
+function Hand({ label, color, total, show3, phase, side }) {
+  const [show, setShow] = useState({ c1:false, c2:false, c3:false });
+
+  useEffect(() => {
+    if (phase === "p1b1") setShow(s=> ({...s, c1:true}));
+    if (phase === "p2b2") setShow(s=> ({...s, c2:true}));
+    if (phase === "p3" && side === "player" && show3) setShow(s=> ({...s, c3:true}));
+    if (phase === "b3" && side === "banker" && show3) setShow(s=> ({...s, c3:true}));
+  }, [phase]);
+
+  const cards = useMemo(() => {
+    const seed = side === "player" ? 3 : 6;
+    const ranks = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+    const suits = ["♠","♥","♦","♣"];
+    const mk = (i) => ({
+      rank: ranks[(seed + i*2) % ranks.length],
+      suit: suits[(seed*7 + i*3) % suits.length],
+    });
+    return [mk(0), mk(1), mk(2)];
+  }, [side]);
+
+  return (
+    <div className="brv__hand">
+      <div className="brv__handTitle" style={{ color }}>{label}</div>
+      <div className="brv__cards">
+        <Card visible={show.c1} data={cards[0]} />
+        <Card visible={show.c2} data={cards[1]} />
+        <Card visible={show.c3} data={cards[2]} dim={!show3} />
+      </div>
+      <div className="brv__total">點數：<b>{total}</b></div>
+    </div>
+  );
+}
+
+function Card({ visible, dim, data }) {
+  const { rank, suit } = data || {};
+  const isRed = suit === "♥" || suit === "♦";
+
+  return (
+    <div className={`brv__card ${visible ? "show" : ""}`} style={{ opacity: dim ? .35 : 1 }}>
+      <div className="brv__cardFace brv__back" />
+      <div className="brv__cardFace brv__front">
+        <div className="brv__corner" style={{ color: isRed ? "#d11" : "#111" }}>
+          <div className="brv__rank">{rank}</div>
+          <div className="brv__suit">{suit}</div>
+        </div>
+        <div className="brv__pip" style={{ color: isRed ? "#d11" : "#111" }}>{suit}</div>
+        <div className="brv__corner brv__corner--br" style={{ color: isRed ? "#d11" : "#111" }}>
+          <div className="brv__rank">{rank}</div>
+          <div className="brv__suit">{suit}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Sparkles({ color="#f5c542", count=18 }) {
+  const items = Array.from({ length: count }).map((_,i)=> i);
+  return (
+    <div className="brv__sparks">
+      {items.map(i => (
+        <span key={i} className="brv__spark" style={{
+          background: color,
+          animationDelay: `${(i%7)*0.12}s`,
+          left: `${10 + (i*7)%80}%`
+        }} />
+      ))}
+    </div>
+  );
+}
