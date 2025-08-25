@@ -1,107 +1,139 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+// src/pages/Baccarat.jsx
+import { useEffect, useState } from "react";
+import { get, post } from "../api";
+import { useNavigate } from "react-router-dom";
+import BaccaratReveal from "../components/BaccaratReveal";
 
-export default function BaccaratReveal({
-  visible,
-  winner,
-  playerTotal = 0,
-  bankerTotal = 0,
-  playerDraw3 = false,
-  bankerDraw3 = false,
-  durationMs = 15000,
-  bellSrc,
-  timings = { p1b1:800, p2b2:1800, p3:2800, b3:3200, glow:3800 },
-  onFinish,
-}) {
-  const [phase, setPhase] = useState("idle");
-  const audioRef = useRef(null);
+export default function Baccarat() {
+  const nav = useNavigate();
+  const token = localStorage.getItem("token") || "";
+
+  const [balance, setBalance] = useState(0);
+  const [bets, setBets] = useState({ player: 0, banker: 0, tie: 0 });
+  const [remain, setRemain] = useState(0);
+  const [history, setHistory] = useState([]);
+  const [msg, setMsg] = useState("");
+  const [soundOn] = useState(true);
+
+  // 開牌動畫控制
+  const [revealData, setRevealData] = useState({
+    show: false,
+    winner: null,
+    pt: 0,
+    bt: 0,
+    p3: false,
+    b3: false,
+  });
+  const revealMs = 15000; // 15 秒動畫
+
+  async function refreshBalance() {
+    try {
+      const b = await get("/balance", token);
+      setBalance(b.balance);
+    } catch {}
+  }
+
+  async function loadHistory() {
+    try {
+      const h = await get("/rounds/history", token);
+      setHistory(h);
+    } catch {}
+  }
+
+  async function loadRemain() {
+    try {
+      const r = await get("/rounds/remain", token);
+      setRemain(r.remain_sec);
+    } catch {}
+  }
 
   useEffect(() => {
-    if (!visible) { setPhase("idle"); return; }
-    setPhase("start");
-    if (bellSrc) {
-      const a = new Audio(bellSrc);
-      audioRef.current = a;
-      a.volume = 0.8;
-      a.play().catch(()=>{});
+    refreshBalance();
+    loadHistory();
+    loadRemain();
+    const id = setInterval(() => loadRemain(), 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  async function bet(side, amt) {
+    setMsg("");
+    try {
+      const r = await post("/bet", { side, amount: amt }, token);
+      setBets(r.bets);
+      refreshBalance();
+      setMsg("下注成功");
+    } catch (e) {
+      setMsg(e.message || "下注失敗");
     }
-    const t1 = setTimeout(()=>setPhase("p1b1"), timings.p1b1);
-    const t2 = setTimeout(()=>setPhase("p2b2"), timings.p2b2);
-    const t3 = setTimeout(()=> playerDraw3 ? setPhase("p3") : bankerDraw3 ? setPhase("b3") : setPhase("glow"), timings.p3);
-    const t4 = setTimeout(()=> bankerDraw3 ? setPhase("b3") : setPhase("glow"), timings.b3);
-    const t5 = setTimeout(()=>setPhase("glow"), timings.glow);
-    const t6 = setTimeout(()=> onFinish && onFinish(), durationMs);
-    return ()=>[t1,t2,t3,t4,t5,t6].forEach(clearTimeout);
-  }, [visible]);
-
-  if (!visible) return null;
-
-  const glowColor = winner==="player" ? "#2b6cb0" : winner==="banker" ? "#dc2626" : "#16a34a";
+  }
 
   return (
-    <div style={overlay}>
-      <div style={panel}>
-        <div style={row}>
-          <Hand title="PLAYER" total={playerTotal} show3={playerDraw3} phase={phase} side="player" />
-          <Hand title="BANKER" total={bankerTotal} show3={bankerDraw3} phase={phase} side="banker" />
+    <main style={page}>
+      <header style={header}>
+        <div>
+          <b>百家樂</b>　餘額：{balance}
         </div>
-        <div style={{ marginTop: 12, fontSize: 14, opacity: .9 }}>
-          {phase==="glow" ? <span>結果：<b>{winner?.toUpperCase()}</b></span> : "開獎中…"}
+        <button onClick={() => nav("/")} style={btn}>← 回大廳</button>
+      </header>
+
+      {/* ✅ 開獎動畫固定在下注面板上方 */}
+      <BaccaratReveal
+        visible={revealData.show}
+        winner={revealData.winner}
+        playerTotal={revealData.pt}
+        bankerTotal={revealData.bt}
+        playerDraw3={revealData.p3}
+        bankerDraw3={revealData.b3}
+        durationMs={revealMs}
+        bellSrc={soundOn ? "/sounds/bell.mp3" : undefined}
+        timings={{ p1b1: 800, p2b2: 1700, p3: 2600, b3: 3200, glow: 3700 }}
+        onFinish={async () => {
+          setRevealData({
+            show: false,
+            winner: null,
+            pt: 0,
+            bt: 0,
+            p3: false,
+            b3: false,
+          });
+          try { await loadHistory(); } catch {}
+          try { await refreshBalance(); } catch {}
+        }}
+      />
+
+      {/* 下注面板 */}
+      <section style={board}>
+        <div style={{ marginBottom: 8 }}>下注倒數：{remain}s</div>
+        <div style={{ display: "flex", gap: 12 }}>
+          <button onClick={() => bet("player", 100)} style={btnPrimary}>閒 +100</button>
+          <button onClick={() => bet("banker", 100)} style={btnDanger}>莊 +100</button>
+          <button onClick={() => bet("tie", 100)} style={btnOutline}>和 +100</button>
         </div>
-        {phase==="glow" && <div style={{ ...glow, boxShadow:`0 0 24px 6px ${glowColor}` }} />}
-      </div>
-    </div>
+        {msg && <div style={{ marginTop: 6 }}>{msg}</div>}
+      </section>
+
+      {/* 歷史區 */}
+      <section style={card}>
+        <h3>近十局</h3>
+        <ul>
+          {history.map((r, i) => (
+            <li key={i}>
+              {r.round_no}：{r.outcome}　P {r.player_total} / B {r.banker_total}
+            </li>
+          ))}
+        </ul>
+      </section>
+    </main>
   );
 }
 
-function Hand({ title, total, show3, phase, side }) {
-  const [show, setShow] = useState({ c1:false, c2:false, c3:false });
-  useEffect(() => {
-    if (phase==="p1b1" && side==="player") setShow(s=>({...s, c1:true}));
-    if (phase==="p1b1" && side==="banker") setShow(s=>({...s, c1:true}));
-    if (phase==="p2b2" && side==="player") setShow(s=>({...s, c2:true}));
-    if (phase==="p2b2" && side==="banker") setShow(s=>({...s, c2:true}));
-    if (phase==="p3" && side==="player" && show3) setShow(s=>({...s, c3:true}));
-    if (phase==="b3" && side==="banker" && show3) setShow(s=>({...s, c3:true}));
-  }, [phase]);
+/* ====== 樣式 ====== */
+const page = { padding: 20, fontFamily: "ui-sans-serif, system-ui" };
+const header = { display: "flex", justifyContent: "space-between", marginBottom: 16 };
+const board = { border: "1px solid #ddd", borderRadius: 12, padding: 16, marginBottom: 16, background: "#fff" };
+const card = { border: "1px solid #ddd", borderRadius: 12, padding: 16, background: "#fafafa" };
 
-  const color = side==="player" ? "#2b6cb0" : side==="banker" ? "#dc2626" : "#16a34a";
-
-  return (
-    <div style={{ width: "45%", minWidth: 260 }}>
-      <div style={{ fontWeight: 800, letterSpacing: 1, color, marginBottom: 6 }}>{title}</div>
-      <div style={{ display:"flex", gap: 10 }}>
-        <Card visible={show.c1} />
-        <Card visible={show.c2} />
-        <Card visible={show.c3} dim={!show3} />
-      </div>
-      <div style={{ marginTop: 8 }}>點數：<b>{total}</b></div>
-    </div>
-  );
-}
-
-function Card({ visible, dim }) {
-  return (
-    <div style={{
-      width: 88, height: 120, borderRadius: 12, border: "1px solid #ddd",
-      background: visible ? "#fff" : "linear-gradient(135deg,#111 0%,#333 100%)",
-      transform: visible ? "rotateY(0)" : "rotateY(180deg)",
-      transition: "transform .6s ease, background .6s ease, opacity .4s",
-      transformStyle: "preserve-3d",
-      opacity: dim ? .35 : 1,
-      display: "grid", placeItems: "center", fontWeight: 800, fontSize: 18
-    }}>
-      {visible ? "🃏" : ""}
-    </div>
-  );
-}
-
-const overlay = {
-  position:"fixed", inset:0, background:"rgba(0,0,0,.45)", display:"grid",
-  placeItems:"center", zIndex: 50
-};
-const panel = {
-  width:"min(940px, 96vw)", background:"#0b0b0c", color:"#fff", borderRadius:16, padding:24,
-  border:"1px solid #1f1f22", boxShadow:"0 10px 40px rgba(0,0,0,.5)", textAlign:"center"
-};
-const row = { display:"flex", gap:24, justifyContent:"space-between", alignItems:"center", flexWrap:"wrap" };
-const glow = { width: "100%", height: 4, borderRadius: 999, marginTop: 10 };
+const btn = { padding: "8px 12px", border: "1px solid #ddd", background: "transparent", borderRadius: 10, cursor: "pointer" };
+const btnPrimary = { padding: "10px 14px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer" };
+const btnDanger = { padding: "10px 14px", background: "#dc2626", color: "#fff", border: "none", borderRadius: 10, cursor: "pointer" };
+const btnOutline = { padding: "10px 14px", border: "1px solid #999", background: "transparent", borderRadius: 10, cursor: "pointer" };
