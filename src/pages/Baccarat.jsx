@@ -1,6 +1,5 @@
-// src/pages/Baccarat.jsx
 import { useEffect, useState } from "react";
-import { get, post, apiBase } from "../api";
+import { get, post } from "../api";
 import { useNavigate } from "react-router-dom";
 import BaccaratReveal from "../components/BaccaratReveal";
 
@@ -35,18 +34,16 @@ export default function Baccarat() {
   const [remain, setRemain] = useState(0);
   const [msg, setMsg] = useState("");
 
-  // 動畫設定
   const defaultTiming = { p1b1:800, p2b2:1800, p3:2800, b3:3200, glow:3800 };
-  const [revealMs, setRevealMs] = useState(() => Number(localStorage.getItem("revealMs") || 15000));
-  const [timing, setTiming] = useState(() => {
+  const [revealMs] = useState(() => Number(localStorage.getItem("revealMs") || 15000));
+  const [timing] = useState(() => {
     try { return JSON.parse(localStorage.getItem("revealTiming") || "null") || defaultTiming; }
     catch { return defaultTiming; }
   });
-  const [soundOn, setSoundOn] = useState(() => localStorage.getItem("revealSoundOn") !== "0");
+  const [soundOn] = useState(() => localStorage.getItem("revealSoundOn") !== "0");
 
   const [revealData, setRevealData] = useState({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
 
-  // 初始化 /me
   useEffect(() => {
     (async () => {
       try {
@@ -62,7 +59,6 @@ export default function Baccarat() {
     })();
   }, []);
 
-  // 每秒輪詢桌況，偵測 open→closed 觸發開獎
   useEffect(() => {
     let last = { round_no: null, status: null };
     const t = setInterval(async () => {
@@ -70,10 +66,8 @@ export default function Baccarat() {
         const c = await get("/rounds/current");
         setCurrent(c);
         setRemain(c.remain_sec ?? 0);
-
         const justClosed = last.status === "open" && c.status === "closed";
         const roundChanged = last.round_no !== null && c.round_no !== last.round_no;
-
         if (justClosed || roundChanged || (c.status === "closed" && last.status !== "closed")) {
           const hist = await get("/rounds/last10");
           const top = hist.rows?.[0];
@@ -89,9 +83,7 @@ export default function Baccarat() {
           }
         }
         last = { round_no: c.round_no, status: c.status };
-      } catch (e) {
-        // 靜默（偶發輪詢失敗）
-      }
+      } catch {}
     }, 1000);
     return () => clearInterval(t);
   }, []);
@@ -141,7 +133,6 @@ export default function Baccarat() {
         </div>
       </header>
 
-      {/* 桌況 / 倒數 */}
       <section style={board}>
         <div style={boardTop}>
           <div>局號：<b>{current.round_no ?? "-"}</b></div>
@@ -149,7 +140,6 @@ export default function Baccarat() {
           {current.status === "open" && <div>倒數：<b>{remain}s</b></div>}
         </div>
 
-        {/* 主注 */}
         <div style={sideGrid}>
           {SIDES.map((s) => (
             <button key={s.key}
@@ -165,7 +155,6 @@ export default function Baccarat() {
           ))}
         </div>
 
-        {/* 副注 */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap: 8, marginTop: 10 }}>
           {EXTRA.map(x => (
             <button key={x.key}
@@ -182,7 +171,6 @@ export default function Baccarat() {
           ))}
         </div>
 
-        {/* 籌碼列 */}
         <div style={chipRow}>
           {CHIPS.map((c) => (
             <div key={c} onClick={() => addChip(c)} onMouseEnter={() => setChip(c)}
@@ -199,7 +187,6 @@ export default function Baccarat() {
         {msg && <div style={{ marginTop: 8, color: /成功/.test(msg) ? "#16a34a" : "#dc2626" }}>{msg}</div>}
       </section>
 
-      {/* 路紙 + 近十局 */}
       <section style={card}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>近十局</h2>
@@ -231,7 +218,6 @@ export default function Baccarat() {
         </table>
       </section>
 
-      {/* 開獎動畫（疊在下注面板上方） */}
       <BaccaratReveal
         visible={revealData.show}
         winner={revealData.winner}
@@ -241,7 +227,7 @@ export default function Baccarat() {
         bankerDraw3={revealData.b3}
         durationMs={revealMs}
         bellSrc={soundOn ? "/sounds/bell.mp3" : undefined}
-        timings={timing}
+        timings={defaultTiming}
         onFinish={async () => {
           setRevealData({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
           try { await loadHistory(); } catch {}
@@ -252,7 +238,6 @@ export default function Baccarat() {
   );
 }
 
-/* ===== 路紙 ===== */
 function Roadmap({ rows }) {
   const seq = rows.slice().reverse().map(r => r.outcome).filter(Boolean);
   const grid = Array.from({ length: 6 }, () => Array(12).fill(null));
@@ -274,7 +259,6 @@ function Roadmap({ rows }) {
   );
 }
 
-/* ===== styles ===== */
 const page   = { padding: 20, fontFamily: "ui-sans-serif, system-ui", background:"#f6f7fb", minHeight:"100vh" };
 const header = { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 };
 const board  = { border: "1px solid #eee", borderRadius: 12, padding: 16, background: "#fff", marginBottom: 16, boxShadow:"0 2px 10px rgba(0,0,0,0.03)" };
