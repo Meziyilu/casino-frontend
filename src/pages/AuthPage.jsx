@@ -1,3 +1,4 @@
+// src/pages/AuthPage.jsx
 import { useState } from "react";
 import { post } from "../api";
 import { useNavigate } from "react-router-dom";
@@ -14,10 +15,13 @@ export default function AuthPage() {
     try {
       const path = isLogin ? "/auth/login" : "/auth/register";
       const res = await post(path, { username: acc, password: pw });
-      localStorage.setItem("token", res.access_token);
+      // 後端回傳 {access_token}
+      const token = res?.access_token;
+      if (!token) throw new Error("登入回應異常，沒有 access_token");
+      localStorage.setItem("token", token);
       nav("/");
     } catch (e) {
-      setMsg(e.message || "failed");
+      setMsg(e.message || "發生錯誤");
     }
   }
 

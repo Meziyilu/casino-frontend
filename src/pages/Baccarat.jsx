@@ -1,6 +1,6 @@
 // src/pages/Baccarat.jsx
 import { useEffect, useState } from "react";
-import { get, post } from "../api";
+import { get, post, apiBase } from "../api";
 import { useNavigate } from "react-router-dom";
 import BaccaratReveal from "../components/BaccaratReveal";
 
@@ -54,11 +54,11 @@ export default function Baccarat() {
         setMe(u); setIsAdmin(!!u.is_admin);
       } catch (e) {
         if (e.status === 401) { localStorage.removeItem("token"); nav("/auth"); }
-        else { setMsg("載入使用者失敗：" + e.message); }
+        else { setMsg("載入使用者失敗：" + (e.message || e)); }
         return;
       }
-      try { await refreshBalance(); } catch (e) { setMsg("讀取餘額失敗：" + e.message); }
-      try { await loadHistory(); }   catch (e) { setMsg("讀取歷史失敗：" + e.message); }
+      try { await refreshBalance(); } catch (e) { setMsg("讀取餘額失敗：" + (e.message || e)); }
+      try { await loadHistory(); }   catch (e) { setMsg("讀取歷史失敗：" + (e.message || e)); }
     })();
   }, []);
 
@@ -89,7 +89,9 @@ export default function Baccarat() {
           }
         }
         last = { round_no: c.round_no, status: c.status };
-      } catch {}
+      } catch (e) {
+        // 靜默（偶發輪詢失敗）
+      }
     }, 1000);
     return () => clearInterval(t);
   }, []);
@@ -146,6 +148,7 @@ export default function Baccarat() {
           <div>狀態：<b>{current.status}</b></div>
           {current.status === "open" && <div>倒數：<b>{remain}s</b></div>}
         </div>
+
         {/* 主注 */}
         <div style={sideGrid}>
           {SIDES.map((s) => (
@@ -228,7 +231,7 @@ export default function Baccarat() {
         </table>
       </section>
 
-      {/* 開獎動畫 */}
+      {/* 開獎動畫（疊在下注面板上方） */}
       <BaccaratReveal
         visible={revealData.show}
         winner={revealData.winner}
