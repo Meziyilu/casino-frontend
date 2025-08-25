@@ -14,14 +14,19 @@ export default function AuthPage() {
     setMsg("");
     try {
       const path = isLogin ? "/auth/login" : "/auth/register";
-      const res = await post(path, { username: acc, password: pw });
-      // 後端回傳 {access_token}
+      const res = await post(path, { username: acc.trim(), password: pw });
       const token = res?.access_token;
-      if (!token) throw new Error("登入回應異常，沒有 access_token");
+      if (!token) throw new Error("登入回應異常（沒有 access_token）");
       localStorage.setItem("token", token);
       nav("/");
     } catch (e) {
-      setMsg(e.message || "發生錯誤");
+      if (e.status === 409 || /exists/i.test(e.message)) {
+        setMsg("此帳號已被註冊，請改用其他帳號或切換到登入");
+      } else if (e.status === 401) {
+        setMsg("帳號或密碼錯誤");
+      } else {
+        setMsg(e.message || "發生錯誤");
+      }
     }
   }
 
@@ -32,7 +37,7 @@ export default function AuthPage() {
         <input placeholder="帳號" value={acc} onChange={e=>setAcc(e.target.value)} style={inpt}/>
         <input type="password" placeholder="密碼" value={pw} onChange={e=>setPw(e.target.value)} style={inpt}/>
         <button onClick={submit} style={btn}>{isLogin ? "登入" : "註冊並登入"}</button>
-        <button onClick={()=>setIsLogin(v=>!v)} style={btnGhost}>
+        <button onClick={()=>{ setIsLogin(v=>!v); setMsg(""); }} style={btnGhost}>
           {isLogin ? "沒有帳號？去註冊" : "已有帳號？去登入"}
         </button>
         {msg && <div style={{ color:"#dc2626" }}>{msg}</div>}

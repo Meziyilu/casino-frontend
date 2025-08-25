@@ -4,15 +4,9 @@ export function apiBase() {
 }
 
 async function parseError(r) {
-  // 優先嘗試 JSON -> 再退回 text
   try {
     const data = await r.clone().json();
-    // 從常見欄位找 message
-    const msg =
-      data?.message ??
-      data?.detail ??
-      data?.error ??
-      (typeof data === "string" ? data : "");
+    const msg = data?.message ?? data?.detail ?? data?.error ?? (typeof data === "string" ? data : "");
     if (msg) return msg;
   } catch (_) {}
   try {
@@ -29,35 +23,24 @@ async function handle(r) {
     err.status = r.status;
     throw err;
   }
-  // 有些 API（例如 204）沒有 body
   const text = await r.text().catch(() => "");
   if (!text) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 export async function get(path, token) {
-  return handle(
-    fetch(`${apiBase()}${path}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      credentials: "include",
-    })
-  );
+  return handle(fetch(`${apiBase()}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  }));
 }
 
 export async function post(path, body, token) {
-  return handle(
-    fetch(`${apiBase()}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(body ?? {}),
-      credentials: "include",
-    })
-  );
+  return handle(fetch(`${apiBase()}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body ?? {}),
+  }));
 }
