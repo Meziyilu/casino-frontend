@@ -1,16 +1,22 @@
-import { Routes, Route, Navigate } from "react-router-dom";
-import AuthPage from "./pages/AuthPage";
-import Lobby from "./pages/Lobby";
-import Baccarat from "./pages/Baccarat";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import AuthPage from "./pages/AuthPage.jsx";
+import Lobby from "./pages/Lobby.jsx";
+import Baccarat from "./pages/Baccarat.jsx";
+
+function RequireAuth({ children }) {
+  const token = localStorage.getItem("token");
+  const loc = useLocation();
+  if (!token) return <Navigate to="/auth" state={{ from: loc }} replace />;
+  return children;
+}
 
 export default function App() {
-  const token = localStorage.getItem("token");
   return (
     <Routes>
       <Route path="/auth" element={<AuthPage />} />
-      <Route path="/" element={token ? <Lobby /> : <Navigate to="/auth" />} />
-      <Route path="/game/baccarat" element={token ? <Baccarat /> : <Navigate to="/auth" />} />
-      <Route path="*" element={<Navigate to="/" />} />
+      <Route path="/" element={<RequireAuth><Lobby /></RequireAuth>} />
+      <Route path="/game/baccarat" element={<RequireAuth><Baccarat /></RequireAuth>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
