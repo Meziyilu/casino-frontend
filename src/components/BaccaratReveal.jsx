@@ -35,7 +35,7 @@ export default function Baccarat() {
   const [remain, setRemain] = useState(0);
   const [msg, setMsg] = useState("");
 
-  // 動畫參數（可從 localStorage 調整也可維持預設）
+  // 動畫參數
   const defaultTiming = { p1b1:800, p2b2:1700, p3:2600, b3:3200, glow:3700 };
   const [revealMs] = useState(() => Number(localStorage.getItem("revealMs") || 15000));
   const [soundOn] = useState(() => localStorage.getItem("revealSoundOn") !== "0");
@@ -43,14 +43,13 @@ export default function Baccarat() {
   // 開牌動畫資料
   const [revealData, setRevealData] = useState({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
 
-  // 首次載入：抓玩家資訊、餘額、歷史
+  // 首次載入
   useEffect(() => {
     (async () => {
       try {
         const u = await get("/me", token);
         setMe(u); setIsAdmin(!!u.is_admin);
-      } catch (e) {
-        // 沒 token / token 失效
+      } catch {
         localStorage.removeItem("token");
         nav("/auth");
         return;
@@ -60,12 +59,12 @@ export default function Baccarat() {
     })();
   }, []);
 
-  // 每秒輪詢目前局況，並在「關單→出結果」瞬間觸發動畫
+  // 每秒輪詢目前局況，捕捉「關單→出結果」觸發動畫
   useEffect(() => {
     let last = { round_no: null, status: null };
     const t = setInterval(async () => {
       try {
-        const c = await get("/rounds/current");   // 後端提供 remain_sec、status、round_no
+        const c = await get("/rounds/current");
         setCurrent(c);
         setRemain(c.remain_sec ?? 0);
 
@@ -73,7 +72,6 @@ export default function Baccarat() {
         const roundChanged = last.round_no !== null && c.round_no !== last.round_no;
 
         if (justClosed || roundChanged || (c.status === "closed" && last.status !== "closed")) {
-          // 取最新一局結果，開啟動畫
           const hist = await get("/rounds/last10");
           const top = hist.rows?.[0];
           if (top && top.outcome) {
@@ -89,9 +87,7 @@ export default function Baccarat() {
         }
 
         last = { round_no: c.round_no, status: c.status };
-      } catch {
-        // 忽略暫時網路/後端波動
-      }
+      } catch {}
     }, 1000);
 
     return () => clearInterval(t);
