@@ -1,18 +1,18 @@
+// src/pages/Baccarat.jsx
 import { useEffect, useState } from "react";
-import { get, post } from "../api";
+import { get, post, apiBase } from "../api";
 import { useNavigate } from "react-router-dom";
 
 const CHIPS = [10, 50, 100, 500, 1000];
 const SIDES = [
   { key: "player", label: "閒", sub: "1:1", color: "#2b6cb0" },
-  { key: "tie",    label: "和", sub: "1:1(暫)", color: "#16a34a" }, // 後端目前 1:1，可之後改 8:1
-  { key: "banker", label: "莊", sub: "1:1(暫)", color: "#dc2626" }, // 後端目前 1:1，可之後改 0.95
+  { key: "tie",    label: "和", sub: "1:1(暫)", color: "#16a34a" }, // 之後可改 8:1
+  { key: "banker", label: "莊", sub: "1:1(暫)", color: "#dc2626" }, // 之後可改 0.95
 ];
 
 export default function Baccarat() {
   const nav = useNavigate();
   const token = localStorage.getItem("token") || "";
-  const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 
   const [me, setMe] = useState(null);
   const [balance, setBalance] = useState(null);
@@ -21,18 +21,33 @@ export default function Baccarat() {
   const [betAmount, setBetAmount] = useState(0);
   const [history, setHistory] = useState([]);
   const [msg, setMsg] = useState("");
-  const [hasOpenRound, setHasOpenRound] = useState(true); // 先假設有，讀歷史後會修正
+  const [hasOpenRound, setHasOpenRound] = useState(true);
 
   useEffect(() => {
     (async () => {
+      // 只在 /me 401 時登出
       try {
         const u = await get("/me", token);
         setMe(u);
+      } catch (e) {
+        if (e.status === 401) {
+          localStorage.removeItem("token");
+          nav("/auth");
+        } else {
+          setMsg("載入使用者失敗：" + e.message);
+        }
+        return;
+      }
+
+      try {
         await refreshBalance();
+      } catch (e) {
+        setMsg("讀取餘額失敗：" + e.message);
+      }
+      try {
         await loadHistory();
       } catch (e) {
-        localStorage.removeItem("token");
-        nav("/auth");
+        setMsg("讀取歷史失敗：" + e.message);
       }
     })();
   }, []);
@@ -45,7 +60,6 @@ export default function Baccarat() {
   async function loadHistory() {
     const res = await get("/rounds/last10");
     setHistory(res.rows || []);
-    // 若最新一筆 outcome 為 null → 有開局
     const open = res.rows?.length && res.rows[0]?.outcome == null;
     setHasOpenRound(!!open);
   }
@@ -73,9 +87,14 @@ export default function Baccarat() {
       setMsg("下注成功！");
       setBetAmount(0);
     } catch (e) {
+      if (e.status === 401) {
+        localStorage.removeItem("token");
+        nav("/auth");
+        return;
+      }
       setMsg("下注失敗：" + (e.message || e));
     } finally {
-      await loadHistory();
+      try { await loadHistory(); } catch {}
     }
   }
 
@@ -84,8 +103,9 @@ export default function Baccarat() {
       <header style={header}>
         <button onClick={() => nav("/")} style={btnOutline}>← 回大廳</button>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 14 }}>玩家：{me?.username}</div>
+          <div style={{ fontSize: 14 }}>玩家：{me?.username ?? "—"}</div>
           <div style={{ fontSize: 14 }}>餘額：{balance ?? "—"}</div>
+          <div style={{ color: "#666", fontSize: 12, marginTop: 4 }}>API：{apiBase() || "(same origin)"}</div>
         </div>
       </header>
 
@@ -104,7 +124,7 @@ export default function Baccarat() {
               }}
             >
               <div style={{ fontSize: 28, fontWeight: 800 }}>{s.label}</div>
-              <div style={{ fontSize: 12, opacity: 0.8 }}>{s.sub}</div>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>{s.sub}</div>
             </button>
           ))}
         </div>
@@ -121,6 +141,7 @@ export default function Baccarat() {
               onClick={() => addChip(c)}
               style={{ ...chipItem, boxShadow: chip === c ? "0 0 0 3px #111 inset" : "none" }}
               onMouseEnter={() => setChip(c)}
+              title={`+${c}`}
             >
               {c >= 1000 ? `${c / 1000}K` : c}
             </div>
