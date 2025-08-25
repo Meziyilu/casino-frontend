@@ -1,4 +1,3 @@
-// src/api.js
 export function apiBase() {
   return import.meta.env.VITE_API_BASE || "";
 }
