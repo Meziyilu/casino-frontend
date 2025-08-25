@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { get, post, apiBase } from "../api";
 import { useNavigate } from "react-router-dom";
+import BaccaratReveal from "../components/BaccaratReveal";
 
 // 主注說明：player 1:1、banker 0.95:1、tie 8:1（結算邏輯在後端）
 const CHIPS = [10, 50, 100, 500, 1000];
@@ -10,8 +11,6 @@ const SIDES = [
   { key: "tie",    label: "和", sub: "8:1", color: "#16a34a" },
   { key: "banker", label: "莊", sub: "0.95:1", color: "#dc2626" },
 ];
-
-// 對子/完美對等（副注）
 const EXTRA = [
   { key:"player_pair",  label:"閒對",   odds:"11:1" },
   { key:"banker_pair",  label:"莊對",   odds:"11:1" },
@@ -23,52 +22,67 @@ export default function Baccarat() {
   const nav = useNavigate();
   const token = localStorage.getItem("token") || "";
 
-  // 狀態
   const [me, setMe] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [balance, setBalance] = useState(null);
 
   const [chip, setChip] = useState(100);
-  const [selectSide, setSelectSide] = useState("player"); // 主注方向
-  const [extraSide, setExtraSide] = useState(null);       // 副注方向（若選，會覆蓋主注）
+  const [selectSide, setSelectSide] = useState("player");
+  const [extraSide, setExtraSide] = useState(null);
   const [betAmount, setBetAmount] = useState(0);
 
   const [history, setHistory] = useState([]);
   const [current, setCurrent] = useState({ status: "idle", round_no: null, remain_sec: 0 });
   const [remain, setRemain] = useState(0);
-
   const [msg, setMsg] = useState("");
 
-  // 初始化：驗證 /me（401 才登出），再拉餘額/歷史
+  // 開獎動畫資料
+  const [revealData, setRevealData] = useState({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
+
+  // 初始化：驗證 /me（401 才登出）
   useEffect(() => {
     (async () => {
       try {
         const u = await get("/me", token);
-        setMe(u);
-        setIsAdmin(!!u.is_admin);
+        setMe(u); setIsAdmin(!!u.is_admin);
       } catch (e) {
-        if (e.status === 401) {
-          localStorage.removeItem("token");
-          nav("/auth");
-        } else {
-          setMsg("載入使用者失敗：" + e.message);
-        }
+        if (e.status === 401) { localStorage.removeItem("token"); nav("/auth"); }
+        else { setMsg("載入使用者失敗：" + e.message); }
         return;
       }
-
       try { await refreshBalance(); } catch (e) { setMsg("讀取餘額失敗：" + e.message); }
       try { await loadHistory(); }   catch (e) { setMsg("讀取歷史失敗：" + e.message); }
     })();
   }, []);
 
-  // 每秒輪詢桌況與倒數（不需要 token）
+  // 每秒輪詢桌況，偵測 open→closed 觸發開獎動畫
   useEffect(() => {
+    let last = { round_no: null, status: null };
     let t;
     const tick = async () => {
       try {
-        const c = await get("/rounds/current"); // 後端此路由不驗權
+        const c = await get("/rounds/current");
         setCurrent(c);
         setRemain(c.remain_sec ?? 0);
+
+        const justClosed = last.status === "open" && c.status === "closed";
+        const roundChanged = last.round_no !== null && c.round_no !== last.round_no;
+
+        if (justClosed || roundChanged || (c.status === "closed" && last.status !== "closed")) {
+          const hist = await get("/rounds/last10");
+          const top = hist.rows?.[0];
+          if (top && top.outcome) {
+            setRevealData({
+              show: true,
+              winner: top.outcome,
+              pt: top.player_total ?? 0,
+              bt: top.banker_total ?? 0,
+              p3: !!top.player_draw3,
+              b3: !!top.banker_draw3,
+            });
+          }
+        }
+        last = { round_no: c.round_no, status: c.status };
       } catch {}
     };
     tick();
@@ -80,56 +94,32 @@ export default function Baccarat() {
     const b = await get("/balance", token);
     setBalance(b.balance);
   }
-
   async function loadHistory() {
-    const res = await get("/rounds/last10"); // 不需 token
+    const res = await get("/rounds/last10");
     setHistory(res.rows || []);
   }
 
-  // 籌碼操作
-  function addChip(v) {
-    setBetAmount((x) => Math.max(0, x + v));
-  }
-  function clearBet() {
-    setBetAmount(0);
-    setExtraSide(null);
-  }
+  function addChip(v) { setBetAmount((x) => Math.max(0, x + v)); }
+  function clearBet() { setBetAmount(0); setExtraSide(null); }
 
-  // 下注
   async function confirmBet() {
     setMsg("");
-    if (current.status !== "open" || (remain ?? 0) <= 0) {
-      setMsg("本局已鎖單或尚未開局");
-      return;
-    }
-    if (betAmount <= 0) {
-      setMsg("請選取籌碼與押注金額");
-      return;
-    }
+    if (current.status !== "open" || (remain ?? 0) <= 0) { setMsg("本局已鎖單或尚未開局"); return; }
+    if (betAmount <= 0) { setMsg("請選取籌碼與押注金額"); return; }
     const targetSide = extraSide || selectSide;
     try {
       await post("/bet", { side: targetSide, amount: betAmount }, token);
       await refreshBalance();
-      setMsg("下注成功！");
-      setBetAmount(0);
-      setExtraSide(null);
+      setMsg("下注成功！"); setBetAmount(0); setExtraSide(null);
     } catch (e) {
-      if (e.status === 401) {
-        localStorage.removeItem("token");
-        nav("/auth");
-        return;
-      }
+      if (e.status === 401) { localStorage.removeItem("token"); nav("/auth"); return; }
       setMsg("下注失敗：" + (e.message || e));
     } finally {
       try { await loadHistory(); } catch {}
     }
   }
 
-  // 登出
-  function logout() {
-    localStorage.removeItem("token");
-    nav("/auth");
-  }
+  function logout() { localStorage.removeItem("token"); nav("/auth"); }
 
   return (
     <main style={page}>
@@ -151,31 +141,26 @@ export default function Baccarat() {
         <div style={boardTop}>
           <div>局號：<b>{current.round_no ?? "-"}</b></div>
           <div>狀態：<b>{current.status}</b></div>
-          {current.status === "open" && (
-            <div>倒數：<b>{remain}s</b></div>
-          )}
+          {current.status === "open" && <div>倒數：<b>{remain}s</b></div>}
         </div>
 
-        {/* 主注：閒 和 莊 */}
+        {/* 主注 */}
         <div style={sideGrid}>
           {SIDES.map((s) => (
-            <button
-              key={s.key}
+            <button key={s.key}
               onClick={() => setSelectSide(s.key)}
               style={{
-                ...sideBtn,
-                borderColor: s.color,
+                ...sideBtn, borderColor:s.color,
                 background: selectSide === s.key ? s.color : "#fff",
                 color: selectSide === s.key ? "#fff" : s.color,
-              }}
-            >
+              }}>
               <div style={{ fontSize: 28, fontWeight: 800 }}>{s.label}</div>
               <div style={{ fontSize: 12, opacity: 0.85 }}>{s.sub}</div>
             </button>
           ))}
         </div>
 
-        {/* 副注：對子/完美對 */}
+        {/* 副注 */}
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap: 8, marginTop: 10 }}>
           {EXTRA.map(x => (
             <button key={x.key}
@@ -195,14 +180,10 @@ export default function Baccarat() {
         {/* 籌碼列 */}
         <div style={chipRow}>
           {CHIPS.map((c) => (
-            <div
-              key={c}
-              onClick={() => addChip(c)}
-              style={{ ...chipItem, boxShadow: chip === c ? "0 0 0 3px #111 inset" : "none" }}
-              onMouseEnter={() => setChip(c)}
-              title={`+${c}`}
-            >
-              {c >= 1000 ? `${c / 1000}K` : c}
+            <div key={c} onClick={() => addChip(c)} onMouseEnter={() => setChip(c)}
+                 style={{ ...chipItem, boxShadow: chip === c ? "0 0 0 3px #111 inset" : "none" }}
+                 title={`+${c}`}>
+              {c >= 1000 ? `${c/1000}K` : c}
             </div>
           ))}
           <div style={{ marginLeft: "auto", fontWeight: 700 }}>下注金額：{betAmount}</div>
@@ -240,31 +221,41 @@ export default function Baccarat() {
                 <td style={cell}>{r.outcome ?? "進行中"}</td>
               </tr>
             ))}
-            {history.length === 0 && (
-              <tr><td style={cell} colSpan={5}>尚無資料</td></tr>
-            )}
+            {history.length === 0 && <tr><td style={cell} colSpan={5}>尚無資料</td></tr>}
           </tbody>
         </table>
       </section>
 
-      {/* 管理面板（僅 Admin 可見） */}
-      {isAdmin && (
-        <AdminPanel token={token} afterAction={async () => { await refreshBalance(); await loadHistory(); }} />
-      )}
+      {/* 管理面板（Admin） */}
+      {isAdmin && <AdminPanel token={token} afterAction={async ()=>{ await refreshBalance(); await loadHistory(); }} />}
+
+      {/* 開獎動畫（15 秒） */}
+      <BaccaratReveal
+        visible={revealData.show}
+        winner={revealData.winner}
+        playerTotal={revealData.pt}
+        bankerTotal={revealData.bt}
+        playerDraw3={revealData.p3}
+        bankerDraw3={revealData.b3}
+        durationMs={15000}
+        onFinish={async () => {
+          setRevealData({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
+          try { await loadHistory(); } catch {}
+          try { await refreshBalance(); } catch {}
+        }}
+      />
     </main>
   );
 }
 
-/* ===== 管理面板（開局/鎖單/結算） ===== */
+/* ===== 管理面板 ===== */
 function AdminPanel({ token, afterAction }) {
   return (
     <section style={card}>
       <h2 style={{ margin: 0, fontSize: 18 }}>管理面板</h2>
-
       <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
         <input type="number" min={5} defaultValue={20} id="openSec" style={input} />
-        <button
-          style={btnOutline}
+        <button style={btnOutline}
           onClick={async () => {
             const sec = Number(document.getElementById("openSec").value || 20);
             try {
@@ -273,14 +264,11 @@ function AdminPanel({ token, afterAction }) {
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ duration_sec: sec }),
               }).then(r => r.ok ? r.json() : r.text().then(t=>{throw new Error(t)}));
-              alert("已開新局");
-              await afterAction?.();
+              alert("已開新局"); await afterAction?.();
             } catch(e){ alert(e.message); }
-          }}
-        >開新局（秒）</button>
+          }}>開新局（秒）</button>
 
-        <button
-          style={btnOutline}
+        <button style={btnOutline}
           onClick={async () => {
             try {
               await fetch(`${apiBase()}/admin/close-round`, {
@@ -289,8 +277,7 @@ function AdminPanel({ token, afterAction }) {
               }).then(r => r.ok ? r.json() : r.text().then(t=>{throw new Error(t)}));
               alert("已鎖單");
             } catch(e){ alert(e.message); }
-          }}
-        >鎖單</button>
+          }}>鎖單</button>
       </div>
 
       {/* 結算表單 */}
@@ -307,9 +294,12 @@ function AdminPanel({ token, afterAction }) {
         <label style={ck}><input type="checkbox" id="ap" /> 任意對</label>
         <label style={ck}><input type="checkbox" id="pf" /> 完美對</label>
       </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8 }}>
+        <label style={ck}><input type="checkbox" id="p3" /> 閒補第三張</label>
+        <label style={ck}><input type="checkbox" id="b3" /> 莊補第三張</label>
+      </div>
       <div style={{ marginTop: 8 }}>
-        <button
-          style={btnPrimary}
+        <button style={btnPrimary}
           onClick={async () => {
             try {
               const body = {
@@ -320,6 +310,8 @@ function AdminPanel({ token, afterAction }) {
                 banker_pair: document.getElementById("bp").checked,
                 any_pair: document.getElementById("ap").checked,
                 perfect_pair: document.getElementById("pf").checked,
+                player_draw3: document.getElementById("p3").checked,
+                banker_draw3: document.getElementById("b3").checked,
               };
               await fetch(`${apiBase()}/admin/settle-round`, {
                 method: "POST",
@@ -329,27 +321,22 @@ function AdminPanel({ token, afterAction }) {
               alert("結算完成");
               await afterAction?.();
             } catch(e){ alert(e.message); }
-          }}
-        >結算本局</button>
+          }}>結算本局</button>
       </div>
     </section>
   );
 }
 
-/* ===== 路紙（簡易大路：直落→轉彎） ===== */
+/* ===== 路紙（簡易大路） ===== */
 function Roadmap({ rows }) {
-  const seq = rows.slice().reverse().map(r => r.outcome).filter(Boolean); // 舊→新
+  const seq = rows.slice().reverse().map(r => r.outcome).filter(Boolean);
   const grid = Array.from({ length: 6 }, () => Array(12).fill(null));
   let col=0, row=0, prev=seq[0];
   for (let i=0;i<seq.length;i++){
     const cur=seq[i];
     if (i===0){ grid[row][col]=cur; continue; }
-    if (cur===prev && row<5){
-      row++;
-    } else {
-      prev=cur; col++; row=0;
-      if (col>11) break;
-    }
+    if (cur===prev && row<5){ row++; }
+    else { prev=cur; col++; row=0; if (col>11) break; }
     grid[row][col]=cur;
   }
   const color = (o)=> o==="player"?"#2b6cb0":o==="banker"?"#dc2626":"#16a34a";
@@ -362,7 +349,7 @@ function Roadmap({ rows }) {
   );
 }
 
-/* ====== styles ====== */
+/* ===== styles ===== */
 const page   = { padding: 20, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto", background:"#f6f7fb", minHeight:"100vh" };
 const header = { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 };
 const board  = { border: "1px solid #eee", borderRadius: 12, padding: 16, background: "#fff", marginBottom: 16, boxShadow:"0 2px 10px rgba(0,0,0,0.03)" };
