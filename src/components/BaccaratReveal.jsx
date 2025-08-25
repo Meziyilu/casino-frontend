@@ -3,21 +3,17 @@ import "./baccaratReveal.css";
 
 export default function BaccaratReveal({
   visible,
-  winner,              // 'player' | 'banker' | 'tie'
+  winner,
   playerTotal = 0,
   bankerTotal = 0,
-  playerDraw3,         // true/false
-  bankerDraw3,         // true/false
+  playerDraw3,
+  bankerDraw3,
   durationMs = 15000,
-  videoBg = "/videos/reveal.mp4",
-  bellSrc = "/sounds/bell.mp3",
+  bellSrc,
+  timings = { p1b1:800, p2b2:1800, p3:2800, b3:3200, glow:3800 },
   onFinish,
 }) {
-  const [flip, setFlip] = useState({
-    p1:false, p2:false, p3:false,
-    b1:false, b2:false, b3:false,
-    glow:false
-  });
+  const [flip, setFlip] = useState({ p1:false,p2:false,p3:false,b1:false,b2:false,b3:false,glow:false });
   const audioRef = useRef(null);
   const [mounted, setMounted] = useState(false);
 
@@ -32,18 +28,17 @@ export default function BaccaratReveal({
     setMounted(true);
     setFlip({ p1:false,p2:false,p3:false,b1:false,b2:false,b3:false,glow:false });
 
-    audioRef.current = new Audio(bellSrc);
-    audioRef.current.preload = "auto";
+    if (bellSrc) { audioRef.current = new Audio(bellSrc); audioRef.current.preload = "auto"; }
 
     const timers = [];
-    timers.push(setTimeout(()=>setFlip(s=>({ ...s, p1:true, b1:true })),  800));
-    timers.push(setTimeout(()=>setFlip(s=>({ ...s, p2:true, b2:true })), 1800));
-    if (p3) timers.push(setTimeout(()=>setFlip(s=>({ ...s, p3:true })),  2800));
-    if (b3) timers.push(setTimeout(()=>setFlip(s=>({ ...s, b3:true })),  3200));
+    timers.push(setTimeout(()=>setFlip(s=>({ ...s, p1:true, b1:true })), timings.p1b1));
+    timers.push(setTimeout(()=>setFlip(s=>({ ...s, p2:true, b2:true })), timings.p2b2));
+    if (p3) timers.push(setTimeout(()=>setFlip(s=>({ ...s, p3:true })), timings.p3));
+    if (b3) timers.push(setTimeout(()=>setFlip(s=>({ ...s, b3:true })), timings.b3));
     timers.push(setTimeout(()=>{
       setFlip(s=>({ ...s, glow:true }));
-      try { audioRef.current.currentTime = 0; audioRef.current.play(); } catch {}
-    }, 3800));
+      if (audioRef.current) { try { audioRef.current.currentTime = 0; audioRef.current.play(); } catch {} }
+    }, timings.glow));
     timers.push(setTimeout(()=>{
       setMounted(false);
       onFinish?.();
@@ -53,16 +48,12 @@ export default function BaccaratReveal({
       timers.forEach(clearTimeout);
       try { audioRef.current && audioRef.current.pause(); } catch {}
     };
-  }, [visible, p3, b3, durationMs, onFinish, bellSrc]);
+  }, [visible, p3, b3, durationMs, onFinish, bellSrc, timings]);
 
   if (!visible || !mounted) return null;
 
   return (
     <div className="br-overlay">
-      {videoBg ? (
-        <video className="br-video" src={videoBg} autoPlay muted playsInline loop />
-      ) : null}
-
       <div className="br-modal">
         <SideBlock title="閒" total={playerTotal} cvar="#2b6cb0"
                    f1={flip.p1} f2={flip.p2} f3={flip.p3} show3={p3}

@@ -1,10 +1,9 @@
 // src/pages/Baccarat.jsx
 import { useEffect, useState } from "react";
-import { get, post, apiBase } from "../api";
+import { get, post } from "../api";
 import { useNavigate } from "react-router-dom";
 import BaccaratReveal from "../components/BaccaratReveal";
 
-// 主注說明：player 1:1、banker 0.95:1、tie 8:1（結算邏輯在後端）
 const CHIPS = [10, 50, 100, 500, 1000];
 const SIDES = [
   { key: "player", label: "閒", sub: "1:1", color: "#2b6cb0" },
@@ -36,10 +35,18 @@ export default function Baccarat() {
   const [remain, setRemain] = useState(0);
   const [msg, setMsg] = useState("");
 
-  // 開獎動畫資料
+  // 動畫設定
+  const defaultTiming = { p1b1:800, p2b2:1800, p3:2800, b3:3200, glow:3800 };
+  const [revealMs, setRevealMs] = useState(() => Number(localStorage.getItem("revealMs") || 15000));
+  const [timing, setTiming] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("revealTiming") || "null") || defaultTiming; }
+    catch { return defaultTiming; }
+  });
+  const [soundOn, setSoundOn] = useState(() => localStorage.getItem("revealSoundOn") !== "0");
+
   const [revealData, setRevealData] = useState({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
 
-  // 初始化：驗證 /me（401 才登出）
+  // 初始化 /me
   useEffect(() => {
     (async () => {
       try {
@@ -55,11 +62,10 @@ export default function Baccarat() {
     })();
   }, []);
 
-  // 每秒輪詢桌況，偵測 open→closed 觸發開獎動畫
+  // 每秒輪詢桌況，偵測 open→closed 觸發開獎
   useEffect(() => {
     let last = { round_no: null, status: null };
-    let t;
-    const tick = async () => {
+    const t = setInterval(async () => {
       try {
         const c = await get("/rounds/current");
         setCurrent(c);
@@ -84,9 +90,7 @@ export default function Baccarat() {
         }
         last = { round_no: c.round_no, status: c.status };
       } catch {}
-    };
-    tick();
-    t = setInterval(tick, 1000);
+    }, 1000);
     return () => clearInterval(t);
   }, []);
 
@@ -131,7 +135,6 @@ export default function Baccarat() {
         <div style={{ textAlign:"right" }}>
           <div style={{ fontSize: 14 }}>玩家：{me?.username ?? "—"} {isAdmin && <span style={tag}>ADMIN</span>}</div>
           <div style={{ fontSize: 14 }}>餘額：{balance ?? "—"}</div>
-          <div style={{ color: "#666", fontSize: 12, marginTop: 4 }}>API：{apiBase() || "(same origin)"}</div>
           <button onClick={logout} style={{ ...btnOutline, marginTop: 8 }}>登出</button>
         </div>
       </header>
@@ -143,7 +146,6 @@ export default function Baccarat() {
           <div>狀態：<b>{current.status}</b></div>
           {current.status === "open" && <div>倒數：<b>{remain}s</b></div>}
         </div>
-
         {/* 主注 */}
         <div style={sideGrid}>
           {SIDES.map((s) => (
@@ -226,10 +228,7 @@ export default function Baccarat() {
         </table>
       </section>
 
-      {/* 管理面板（Admin） */}
-      {isAdmin && <AdminPanel token={token} afterAction={async ()=>{ await refreshBalance(); await loadHistory(); }} />}
-
-      {/* 開獎動畫（15 秒） */}
+      {/* 開獎動畫 */}
       <BaccaratReveal
         visible={revealData.show}
         winner={revealData.winner}
@@ -237,7 +236,9 @@ export default function Baccarat() {
         bankerTotal={revealData.bt}
         playerDraw3={revealData.p3}
         bankerDraw3={revealData.b3}
-        durationMs={15000}
+        durationMs={revealMs}
+        bellSrc={soundOn ? "/sounds/bell.mp3" : undefined}
+        timings={timing}
         onFinish={async () => {
           setRevealData({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
           try { await loadHistory(); } catch {}
@@ -248,86 +249,7 @@ export default function Baccarat() {
   );
 }
 
-/* ===== 管理面板 ===== */
-function AdminPanel({ token, afterAction }) {
-  return (
-    <section style={card}>
-      <h2 style={{ margin: 0, fontSize: 18 }}>管理面板</h2>
-      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-        <input type="number" min={5} defaultValue={20} id="openSec" style={input} />
-        <button style={btnOutline}
-          onClick={async () => {
-            const sec = Number(document.getElementById("openSec").value || 20);
-            try {
-              await fetch(`${apiBase()}/admin/open-round`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ duration_sec: sec }),
-              }).then(r => r.ok ? r.json() : r.text().then(t=>{throw new Error(t)}));
-              alert("已開新局"); await afterAction?.();
-            } catch(e){ alert(e.message); }
-          }}>開新局（秒）</button>
-
-        <button style={btnOutline}
-          onClick={async () => {
-            try {
-              await fetch(`${apiBase()}/admin/close-round`, {
-                method: "POST",
-                headers: { Authorization: `Bearer ${token}` }
-              }).then(r => r.ok ? r.json() : r.text().then(t=>{throw new Error(t)}));
-              alert("已鎖單");
-            } catch(e){ alert(e.message); }
-          }}>鎖單</button>
-      </div>
-
-      {/* 結算表單 */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginTop: 12 }}>
-        <select id="outcome" style={input}>
-          <option value="player">閒勝</option>
-          <option value="banker">莊勝</option>
-          <option value="tie">和局</option>
-        </select>
-        <input id="pt" type="number" placeholder="玩家點數" style={input} />
-        <input id="bt" type="number" placeholder="莊家點數" style={input} />
-        <label style={ck}><input type="checkbox" id="pp" /> 閒對</label>
-        <label style={ck}><input type="checkbox" id="bp" /> 莊對</label>
-        <label style={ck}><input type="checkbox" id="ap" /> 任意對</label>
-        <label style={ck}><input type="checkbox" id="pf" /> 完美對</label>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(2,1fr)", gap:8 }}>
-        <label style={ck}><input type="checkbox" id="p3" /> 閒補第三張</label>
-        <label style={ck}><input type="checkbox" id="b3" /> 莊補第三張</label>
-      </div>
-      <div style={{ marginTop: 8 }}>
-        <button style={btnPrimary}
-          onClick={async () => {
-            try {
-              const body = {
-                player_total: Number(document.getElementById("pt").value || 0),
-                banker_total: Number(document.getElementById("bt").value || 0),
-                outcome: document.getElementById("outcome").value,
-                player_pair: document.getElementById("pp").checked,
-                banker_pair: document.getElementById("bp").checked,
-                any_pair: document.getElementById("ap").checked,
-                perfect_pair: document.getElementById("pf").checked,
-                player_draw3: document.getElementById("p3").checked,
-                banker_draw3: document.getElementById("b3").checked,
-              };
-              await fetch(`${apiBase()}/admin/settle-round`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                body: JSON.stringify(body),
-              }).then(r => r.ok ? r.json() : r.text().then(t=>{throw new Error(t)}));
-              alert("結算完成");
-              await afterAction?.();
-            } catch(e){ alert(e.message); }
-          }}>結算本局</button>
-      </div>
-    </section>
-  );
-}
-
-/* ===== 路紙（簡易大路） ===== */
+/* ===== 路紙 ===== */
 function Roadmap({ rows }) {
   const seq = rows.slice().reverse().map(r => r.outcome).filter(Boolean);
   const grid = Array.from({ length: 6 }, () => Array(12).fill(null));
@@ -350,7 +272,7 @@ function Roadmap({ rows }) {
 }
 
 /* ===== styles ===== */
-const page   = { padding: 20, fontFamily: "ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto", background:"#f6f7fb", minHeight:"100vh" };
+const page   = { padding: 20, fontFamily: "ui-sans-serif, system-ui", background:"#f6f7fb", minHeight:"100vh" };
 const header = { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 };
 const board  = { border: "1px solid #eee", borderRadius: 12, padding: 16, background: "#fff", marginBottom: 16, boxShadow:"0 2px 10px rgba(0,0,0,0.03)" };
 const boardTop = { display:"flex", gap:16, alignItems:"center", marginBottom: 10 };
@@ -365,5 +287,3 @@ const btnPrimary = { padding: "10px 14px", background: "#111", color: "#fff", bo
 const btnOutline = { padding: "8px 12px", background: "transparent", color: "#111", border: "1px solid #ccc", borderRadius: 10, cursor: "pointer" };
 const btnGhost   = { padding: "10px 14px", background: "transparent", color: "#111", border: "1px solid #ddd", borderRadius: 10, cursor: "pointer" };
 const tag = { marginLeft: 6, fontSize: 10, background:"#111", color:"#fff", borderRadius: 6, padding:"2px 6px" };
-const input = { width: "100%", padding: 8, borderRadius: 8, border: "1px solid #ddd", outline: "none" };
-const ck = { display:"flex", alignItems:"center", gap:6 };

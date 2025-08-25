@@ -1,0 +1,8 @@
+services:
+  - type: static
+    name: casino-frontend
+    buildCommand: npm install && npm run build
+    publishPath: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: ""   # 空字串=同網域；如果不同域，可填你的後端 URL，如 https://casino-backend-xxxx.onrender.com
