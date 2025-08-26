@@ -1,34 +1,19 @@
-const BASE = import.meta.env.VITE_API_BASE || "";
+const BASE = import.meta.env.VITE_API_BASE
+if (!BASE) console.error('缺少 VITE_API_BASE，請在 .env.production 設定後端網址')
 
-async function http(path, opt = {}) {
-  const res = await fetch(BASE + path, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(opt.headers || {}) },
-    ...opt,
-    body: opt.body ? JSON.stringify(opt.body) : undefined,
-  });
-
-  if (!res.ok) {
-    let payloadText = "";
-    let payloadJson;
-    try { payloadText = await res.text(); } catch {}
-    try { payloadJson = JSON.parse(payloadText); } catch {}
-    const msg =
-      (payloadJson && (payloadJson.message || payloadJson.detail)) ||
-      payloadText ||
-      `HTTP ${res.status}`;
-    const err = new Error(msg);
-    err.status = res.status;
-    err.data = payloadJson || payloadText;
-    throw err;
-  }
-
-  // 有些 API 204 / 空 body
-  const text = await res.text();
-  if (!text) return {};
-  try { return JSON.parse(text); } catch { return { raw: text }; }
+async function jfetch(path, opts = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+    ...opts,
+  })
+  const text = await res.text().catch(() => '')
+  let data; try { data = text ? JSON.parse(text) : null } catch { data = { raw: text } }
+  if (!res.ok) throw new Error(data?.detail || data?.message || `HTTP ${res.status}`)
+  return data
 }
 
-export const get  = (p) => http(p);
-export const post = (p, body) => http(p, { method: "POST", body });
-export const del  = (p) => http(p, { method: "DELETE" });
+export const api = {
+  register: (u,p) => jfetch('/auth/register', { method:'POST', body: JSON.stringify({ username:u, password:p }) }),
+  login:    (u,p) => jfetch('/auth/login',    { method:'POST', body: JSON.stringify({ username:u, password:p }) }),
+  me:       (t)   => jfetch(`/me?token=${encodeURIComponent(t||'')}`),
+}

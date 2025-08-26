@@ -1,47 +1,35 @@
-import { useEffect, useState } from "react";
-import { get } from "../api";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from 'react'
+import { api } from '../api'
+import { useNavigate } from 'react-router-dom'
 
 export default function Lobby() {
-  const nav = useNavigate();
-  const token = localStorage.getItem("token") || "";
-  const [me, setMe] = useState(null);
-  const [bal, setBal] = useState(null);
+  const nav = useNavigate()
+  const [me, setMe] = useState(null)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
-    (async () => {
-      try { setMe(await get("/me", token)); } catch {}
-      try { const b = await get("/balance", token); setBal(b.balance); } catch {}
-    })();
-  }, []);
-
-  function logout() { localStorage.removeItem("token"); nav("/auth"); }
+    const t = localStorage.getItem('token')
+    if (!t) { nav('/auth', { replace:true }); return }
+    api.me(t).then(setMe).catch(err => setError(err.message))
+  }, [])
 
   return (
-    <main style={{ padding: 24, fontFamily: "ui-sans-serif, system-ui" }}>
-      <header style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 16 }}>
-        <div>
-          <b>大廳</b>　玩家：{me?.username ?? "—"}　餘額：{bal ?? "—"}{" "}
-          {me?.is_admin && <span style={tag}>ADMIN</span>}
-        </div>
-        <div style={{ display:"flex", gap:8 }}>
-          {me?.is_admin && <button onClick={()=>nav("/admin")} style={btn}>管理面板</button>}
-          <button onClick={logout} style={btn}>登出</button>
-        </div>
-      </header>
-
-      <section style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:16 }}>
-        <div style={card}>
-          <div style={{ fontSize:18, fontWeight:700, marginBottom:6 }}>百家樂</div>
-          <div style={{ fontSize:13, opacity:0.8, marginBottom:10 }}>即時自動開局、倒數與開獎動畫</div>
-          <button onClick={()=>nav("/game/baccarat")} style={btnPrimary}>進入</button>
-        </div>
-      </section>
+    <main style={wrap}>
+      <div style={box}>
+        <h2>🎲 遊戲大廳</h2>
+        <p style={{opacity:.8}}>目前僅開放登入/註冊，遊戲尚未開放。</p>
+        {me && <p style={{marginTop:8}}>歡迎，{me.nickname || me.username}</p>}
+        {error && <p style={{color:'#d33'}}>{error}</p>}
+        <button style={btn} onClick={() => { localStorage.removeItem('token'); location.href='/auth' }}>
+          登出
+        </button>
+      </div>
     </main>
-  );
+  )
 }
 
-const btn = { padding:"8px 12px", border:"1px solid #ddd", background:"transparent", borderRadius:10, cursor:"pointer" };
-const btnPrimary = { padding:"10px 14px", background:"#111", color:"#fff", border:"none", borderRadius:10, cursor:"pointer" };
-const card = { border:"1px solid #eee", borderRadius:12, padding:16, background:"#fff", boxShadow:"0 2px 8px rgba(0,0,0,.03)" };
-const tag = { marginLeft: 6, fontSize: 10, background:"#111", color:"#fff", borderRadius: 6, padding:"2px 6px" };
+const wrap = { minHeight:'100vh', display:'grid', placeItems:'center', background:'#101010', color:'#fff' }
+const box = { width:420, padding:24, background:'#1b1b1b', borderRadius:12, textAlign:'center',
+  boxShadow:'0 10px 30px rgba(0,0,0,.4)' }
+const btn = { marginTop:14, padding:'10px 16px', borderRadius:8, border:'none', background:'#444',
+  color:'#fff', cursor:'pointer' }

@@ -1,52 +1,58 @@
-import { useState } from "react";
-import { post } from "../api";
-import { useNavigate } from "react-router-dom";
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { api } from '../api'
 
 export default function AuthPage() {
-  const nav = useNavigate();
-  const [acc, setAcc] = useState("");
-  const [pw, setPw] = useState("");
-  const [isLogin, setIsLogin] = useState(true);
-  const [msg, setMsg] = useState("");
+  const nav = useNavigate()
+  const [mode, setMode] = useState('login')
+  const [u, setU] = useState('')
+  const [p, setP] = useState('')
+  const [msg, setMsg] = useState(null)
+  const [loading, setLoading] = useState(false)
 
-  async function submit() {
-    setMsg("");
+  const submit = async (e) => {
+    e.preventDefault()
+    setMsg(null); setLoading(true)
     try {
-      const primary = isLogin ? "/auth/login" : "/auth/register";
-      const legacy  = isLogin ? "/login"      : "/register"; // fallback 舊路徑
-      let res;
-      try {
-        res = await post(primary, { username: acc.trim(), password: pw });
-      } catch (e) {
-        if (e.status === 404) res = await post(legacy, { username: acc.trim(), password: pw });
-        else throw e;
+      if (mode === 'register') {
+        await api.register(u, p)
+        setMsg('註冊成功，請登入'); setMode('login')
+      } else {
+        const r = await api.login(u, p)
+        localStorage.setItem('token', r.token)
+        nav('/lobby', { replace: true })
       }
-      const token = res?.access_token;
-      if (!token) throw new Error("登入回應異常（沒有 access_token）");
-      localStorage.setItem("token", token);
-      nav("/");
-    } catch (e) {
-      if (e.status === 409) setMsg("此帳號已被註冊，請改用其他帳號或切換到登入");
-      else if (e.status === 401) setMsg("帳號或密碼錯誤");
-      else setMsg(e.message || "發生錯誤");
+    } catch (err) {
+      setMsg(err.message || '發生錯誤')
+    } finally {
+      setLoading(false)
     }
   }
 
   return (
-    <main style={{ padding: 32, maxWidth: 420, margin: "0 auto", fontFamily: "ui-sans-serif,system-ui" }}>
-      <h1>{isLogin ? "登入" : "註冊"}</h1>
-      <div style={{ display: "grid", gap: 10 }}>
-        <input placeholder="帳號" value={acc} onChange={e=>setAcc(e.target.value)} style={inpt}/>
-        <input type="password" placeholder="密碼" value={pw} onChange={e=>setPw(e.target.value)} style={inpt}/>
-        <button onClick={submit} style={btn}>{isLogin ? "登入" : "註冊並登入"}</button>
-        <button onClick={()=>{ setIsLogin(v=>!v); setMsg(""); }} style={btnGhost}>
-          {isLogin ? "沒有帳號？去註冊" : "已有帳號？去登入"}
+    <main style={wrap}>
+      <form onSubmit={submit} style={card}>
+        <h2 style={{marginBottom:12}}>{mode==='login' ? '登入' : '註冊'}</h2>
+        <label style={label}>帳號</label>
+        <input style={input} value={u} onChange={(e)=>setU(e.target.value)} required />
+        <label style={label}>密碼</label>
+        <input style={input} type="password" value={p} onChange={(e)=>setP(e.target.value)} required />
+        <button style={btn} disabled={loading}>{loading?'處理中…':(mode==='login'?'登入':'建立帳號')}</button>
+        <button type="button" style={{...btn, background:'#666'}}
+                onClick={()=>setMode(mode==='login'?'register':'login')}>
+          {mode==='login'?'切換到註冊':'切換到登入'}
         </button>
-        {msg && <div style={{ color:"#dc2626" }}>{msg}</div>}
-      </div>
+        {msg && <p style={{color:'#d33', marginTop:8}}>{msg}</p>}
+      </form>
     </main>
-  );
+  )
 }
-const inpt={ padding:10, border:"1px solid #ddd", borderRadius:10 };
-const btn={ padding:10, border:"none", background:"#111", color:"#fff", borderRadius:10, cursor:"pointer" };
-const btnGhost={ padding:10, border:"1px solid #ddd", background:"transparent", borderRadius:10, cursor:"pointer" };
+
+const wrap = { minHeight:'100vh', display:'grid', placeItems:'center', background:'#111' }
+const card = { width:330, background:'#1b1b1b', color:'#fff', padding:20, borderRadius:12,
+  boxShadow:'0 8px 30px rgba(0,0,0,.4)' }
+const label = { fontSize:12, opacity:.75, marginTop:10 }
+const input = { marginTop:4, padding:'10px 12px', borderRadius:8, border:'1px solid #333',
+  background:'#0e0e0e', color:'#fff', outline:'none' }
+const btn = { marginTop:14, width:'100%', padding:'10px 12px', borderRadius:8, border:'none',
+  background:'#2b6cb0', color:'#fff', cursor:'pointer' }
