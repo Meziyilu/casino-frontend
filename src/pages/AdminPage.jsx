@@ -1,7 +1,7 @@
 // src/pages/AdminPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import "../styles/ui.css"; // 沿用你的樣式
+import "../styles/ui.css";
 
 export default function AdminPage() {
   const [token, setToken] = useState(() => sessionStorage.getItem("ADMIN_TOKEN") || "");
@@ -10,12 +10,11 @@ export default function AdminPage() {
   const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
-  const [size, setSize] = useState(20);
+  const [size] = useState(20);
   const [total, setTotal] = useState(0);
   const [err, setErr] = useState("");
 
   const pages = useMemo(() => Math.max(1, Math.ceil(total / size)), [total, size]);
-
   const needToken = !token;
 
   async function loadAll(p = page, keyword = q) {
@@ -28,9 +27,7 @@ export default function AdminPage() {
       setItems(u.items);
       setTotal(u.total);
       setPage(u.page);
-    } catch (e) {
-      setErr(e.message || String(e));
-    }
+    } catch (e) { setErr(e.message || String(e)); }
   }
 
   useEffect(() => { if (token) loadAll(1, ""); }, [token]);
@@ -86,7 +83,8 @@ export default function AdminPage() {
           <div className="userbar">
             {needToken ? (
               <div style={{display:"flex", gap:8}}>
-                <input className="auth-input" placeholder="輸入 ADMIN_TOKEN" value={inputToken} onChange={e=>setInputToken(e.target.value)} style={{width:240}}/>
+                <input className="auth-input" placeholder="輸入 ADMIN_TOKEN"
+                       value={inputToken} onChange={e=>setInputToken(e.target.value)} style={{width:240}}/>
                 <button className="btn primary" onClick={applyToken}>解鎖</button>
               </div>
             ) : (
@@ -104,7 +102,7 @@ export default function AdminPage() {
               <div className="search">
                 <span className="icon">🔎</span>
                 <input placeholder="搜尋帳號/暱稱…" value={q} onChange={e=>setQ(e.target.value)}
-                  onKeyDown={(e)=>{ if(e.key==="Enter") loadAll(1,q); }}/>
+                       onKeyDown={(e)=>{ if(e.key==="Enter") loadAll(1,q); }}/>
               </div>
               <button className="btn" onClick={()=>loadAll(1,q)}>搜尋</button>
               <button className="btn" onClick={()=>{ setQ(""); loadAll(1,""); }}>清空</button>
@@ -156,9 +154,7 @@ export default function AdminPage() {
           </>
         )}
 
-        {needToken && (
-          <div className="empty">請先輸入 <b>ADMIN_TOKEN</b> 解鎖管理面板。</div>
-        )}
+        {needToken && <div className="empty">請先輸入 <b>ADMIN_TOKEN</b> 解鎖管理面板。</div>}
 
         <div className="lobby-footer">
           <div className="muted">© 2025 TOPZ</div>
