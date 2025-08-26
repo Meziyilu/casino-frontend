@@ -23,36 +23,70 @@ export default function AuthPage() {
         nav('/lobby', { replace: true })
       }
     } catch (err) {
-      setMsg(err.message || '發生錯誤')
+      setMsg(err.message || 'Failed to fetch')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <main style={wrap}>
+    <main style={page}>
       <form onSubmit={submit} style={card}>
-        <h2 style={{marginBottom:12}}>{mode==='login' ? '登入' : '註冊'}</h2>
+        <h2 style={title}>{mode==='login' ? '登入' : '註冊'}</h2>
+
         <label style={label}>帳號</label>
-        <input style={input} value={u} onChange={(e)=>setU(e.target.value)} required />
+        <input style={input} value={u} onChange={(e)=>setU(e.target.value)} required placeholder="username" />
+
         <label style={label}>密碼</label>
-        <input style={input} type="password" value={p} onChange={(e)=>setP(e.target.value)} required />
-        <button style={btn} disabled={loading}>{loading?'處理中…':(mode==='login'?'登入':'建立帳號')}</button>
-        <button type="button" style={{...btn, background:'#666'}}
+        <input style={input} type="password" value={p} onChange={(e)=>setP(e.target.value)} required placeholder="password" />
+
+        <button style={btnPrimary} disabled={loading}>
+          {loading ? '處理中…' : (mode==='login' ? '登入' : '建立帳號')}
+        </button>
+        <button type="button" style={btnSecondary}
                 onClick={()=>setMode(mode==='login'?'register':'login')}>
           {mode==='login'?'切換到註冊':'切換到登入'}
         </button>
-        {msg && <p style={{color:'#d33', marginTop:8}}>{msg}</p>}
+
+        {msg && <p style={errMsg}>{msg}</p>}
       </form>
     </main>
   )
 }
 
-const wrap = { minHeight:'100vh', display:'grid', placeItems:'center', background:'#111' }
-const card = { width:330, background:'#1b1b1b', color:'#fff', padding:20, borderRadius:12,
-  boxShadow:'0 8px 30px rgba(0,0,0,.4)' }
-const label = { fontSize:12, opacity:.75, marginTop:10 }
-const input = { marginTop:4, padding:'10px 12px', borderRadius:8, border:'1px solid #333',
-  background:'#0e0e0e', color:'#fff', outline:'none' }
-const btn = { marginTop:14, width:'100%', padding:'10px 12px', borderRadius:8, border:'none',
-  background:'#2b6cb0', color:'#fff', cursor:'pointer' }
+const page = {
+  minHeight:'100svh',
+  display:'grid',
+  placeItems:'center',
+  background:'#0e0e0e',
+  padding:'24px',
+}
+const card = {
+  width:'min(420px, 92vw)',
+  background:'#1b1b1b',
+  color:'#fff',
+  padding:'20px',
+  borderRadius:'14px',
+  boxShadow:'0 10px 40px rgba(0,0,0,.5)',
+}
+const title = { margin:'0 0 12px 0', textAlign:'center' }
+const label = { fontSize:12, opacity:.8, marginTop:10, display:'block' }
+const input = {
+  width:'100%',
+  marginTop:6,
+  padding:'12px',
+  borderRadius:10,
+  border:'1px solid #333',
+  background:'#0f0f0f',
+  color:'#fff',
+  outline:'none',
+}
+const btnPrimary = {
+  marginTop:16, width:'100%', padding:'12px',
+  borderRadius:10, border:'none', background:'#2b6cb0', color:'#fff', cursor:'pointer'
+}
+const btnSecondary = {
+  marginTop:10, width:'100%', padding:'12px',
+  borderRadius:10, border:'none', background:'#555', color:'#fff', cursor:'pointer'
+}
+const errMsg = { color:'#e55', marginTop:10, textAlign:'center' }
