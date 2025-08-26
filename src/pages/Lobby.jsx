@@ -1,135 +1,102 @@
+// src/pages/Lobby.jsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api";
-import "../styles/ui.css";
+import { api } from "../api"; // ← 具名匯入，不要用 default
+// 全域 CSS 已在 src/main.jsx 匯入，這裡不用再匯入
 
 export default function Lobby() {
-  const navigate = useNavigate();
-  const [me, setMe] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const nav = useNavigate();
+  const [me, setMe] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("me") || "null"); } catch { return null; }
+  });
+  const [sum, setSum] = useState(null);
   const [err, setErr] = useState("");
 
   useEffect(() => {
+    if (!me) {
+      nav("/auth");
+      return;
+    }
     (async () => {
       try {
-        const username = localStorage.getItem("username") || "";
-        if (!username) throw new Error("尚未登入");
-        const data = await api.me(username);
-        setMe(data);
+        setErr("");
+        const r = await api.lobbySummary();
+        setSum(r.summary);
       } catch (e) {
-        setErr("尚未登入或連線異常，請重新登入");
-      } finally {
-        setLoading(false);
+        setErr(e.message || "ERROR");
       }
     })();
-  }, []);
+  }, [me, nav]);
 
   function logout() {
-    localStorage.removeItem("username");
-    localStorage.removeItem("uid");
-    navigate("/auth");
+    sessionStorage.removeItem("me");
+    nav("/auth");
   }
-
-  const displayName = me?.nickname || me?.username || "玩家";
-  const balance = Number(me?.balance || 0).toLocaleString();
 
   return (
     <div className="lobby-bg">
-      <div className="glow g1" />
-      <div className="glow g2" />
-      <div className="glow g3" />
+      <div className="glow g1"></div><div className="glow g2"></div><div className="glow g3"></div>
 
       <div className="lobby-shell">
-        {/* 頂欄 */}
-        <header className="lobby-header animate-fadein">
+        <div className="lobby-header">
           <div className="brand">
             <div className="logo">🎰</div>
-            <div className="brand-name">TOPZ 大廳</div>
+            <div className="brand-name">TOPZ Casino 大廳</div>
           </div>
           <div className="userbar">
-            <div className="chips">
-              <div className="chip">
-                <span className="chip-label">玩家</span>
-                <b className="chip-value">{displayName}</b>
-              </div>
-              <div className="chip">
-                <span className="chip-label">餘額</span>
-                <b className="chip-value">{balance}</b>
-              </div>
-            </div>
-            <div className="avatar">{displayName.slice(0, 1).toUpperCase()}</div>
+            {me && (
+              <>
+                <div className="chip"><span className="chip-label">玩家</span><span className="chip-value">{me.nickname || me.username}</span></div>
+                <div className="chip"><span className="chip-label">餘額</span><span className="chip-value">{(me.balance ?? 0).toLocaleString()}</span></div>
+                <div className="avatar">{(me.nickname || me.username || "?").slice(0,1).toUpperCase()}</div>
+              </>
+            )}
             <button className="logout" onClick={logout}>登出</button>
           </div>
-        </header>
+        </div>
 
-        {loading ? (
-          <div className="lobby-loading">載入中…</div>
-        ) : (
-          <>
-            {err && <div className="notice error">{err}</div>}
+        {err && <div className="notice error">錯誤：{err}</div>}
 
-            {/* 英雄橫幅 */}
-            <section className="hero animate-pop">
-              <div className="hero-title">歡迎回來，{displayName}</div>
-              <div className="hero-sub">選擇你的遊戲，今天手氣不錯！</div>
-              <div className="hero-row">
-                <div className="stat">
-                  <div className="stat-val">{balance}</div>
-                  <div className="stat-lab">我的餘額</div>
-                </div>
-                <div className="stat">
-                  <div className="stat-val">0</div>
-                  <div className="stat-lab">今日對局</div>
-                </div>
-                <div className="stat">
-                  <div className="stat-val">—</div>
-                  <div className="stat-lab">連勝</div>
+        <div className="hero">
+          <div className="hero-title">系統統計</div>
+          <div className="hero-row">
+            <div className="stat"><div className="stat-val">{sum?.totalUsers ?? "-"}</div><div className="stat-lab">總會員</div></div>
+            <div className="stat"><div className="stat-val">{sum?.todayNewUsers ?? "-"}</div><div className="stat-lab">今日新註冊</div></div>
+            <div className="stat"><div className="stat-val">{sum ? sum.totalBalance.toLocaleString() : "-"}</div><div className="stat-lab">總餘額</div></div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-title">遊戲清單</div>
+          <div className="grid">
+            <div className="tile disabled">
+              <div className="tile-title">百家樂 <span className="badge busy">建置中</span></div>
+              <div className="tile-desc">即將上線，敬請期待</div>
+              <div className="tile-foot">
+                <div className="tile-meta"><span className="meta-people">🆔 demo</span></div>
+                <div className="tile-cta">
+                  <button className="btn" disabled>進入</button>
                 </div>
               </div>
-            </section>
+            </div>
 
-            {/* 公告 */}
-            <section className="panel">
-              <div className="panel-title">公告</div>
-              <ul className="bullet">
-                <li>百家樂目前重寫中，暫時關閉入口。</li>
-                <li>每日 00:00（台北時間）會重置排行榜與房間。</li>
-                <li>如有問題，請聯繫管理員。</li>
-              </ul>
-            </section>
-
-            {/* 遊戲網格 */}
-            <section className="panel">
-              <div className="panel-title">遊戲清單</div>
-              <div className="grid">
-                <GameTile title="百家樂" desc="維護中 · 即將回歸" disabled />
-                <GameTile title="輪盤" desc="即將上線" disabled />
-                <GameTile title="老虎機" desc="即將上線" disabled />
-                <GameTile title="撲克" desc="即將上線" disabled />
+            <div className="tile" onClick={()=>nav("/admin")}>
+              <div className="corner-ribbon">ADMIN</div>
+              <div className="tile-title">管理面板 <span className="badge online">STAFF</span></div>
+              <div className="tile-desc">加幣 / 設餘額 / 搜尋會員 / 重設密碼</div>
+              <div className="tile-foot">
+                <div className="tile-meta"><span className="meta-people">🛠️ 管理功能</span></div>
+                <div className="tile-cta"><button className="btn primary">打開</button></div>
               </div>
-            </section>
+            </div>
+          </div>
+        </div>
 
-            {/* 底部 */}
-            <footer className="lobby-footer">
-              <div>⚙️ 系統狀態：運行中</div>
-              <div className="muted">© {new Date().getFullYear()} TOPZ</div>
-            </footer>
-          </>
-        )}
+        <div className="lobby-footer">
+          <div className="muted">© 2025 TOPZ</div>
+          <div>Lobby</div>
+        </div>
       </div>
     </div>
-  );
-}
-
-function GameTile({ title, desc, disabled }) {
-  return (
-    <button
-      className={`tile ${disabled ? "disabled" : ""}`}
-      onClick={() => {}}
-      disabled={disabled}
-    >
-      <div className="tile-title">{title}</div>
-      <div className="tile-desc">{desc}</div>
-    </button>
   );
 }
