@@ -1,53 +1,59 @@
 // src/pages/Lobby.jsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, authStore } from "../api";
 import "../styles/ui.css";
-
-const ROOMS = ["room1", "room2", "room3"];
 
 export default function Lobby() {
   const nav = useNavigate();
-  const [me, setMe] = useState(null);
-  const [rooms, setRooms] = useState({});
-  const [lb, setLb] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const [top5, setTop5] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
+  async function loadAll() {
+    try {
+      setErr("");
+      const [r, lb] = await Promise.all([
+        api.rooms ? api.rooms() : fetchRoomsFallback(),
+        api.leaderboardToday().catch(() => ({ top5: [] })),
+      ]);
+      setRooms(r.rooms || []);
+      setTop5(lb.top5 || []);
+    } catch (e) {
+      setErr(e?.message || "載入失敗");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // 備援：如果還沒加 /baccarat/rooms，就用三次 /state 組回來
+  async function fetchRoomsFallback() {
+    const names = ["room1", "room2", "room3"];
+    const states = await Promise.all(names.map((room) => api.state(room)));
+    const rooms = states.map((s, i) => ({
+      room: names[i],
+      round_no: s.round_no,
+      phase: s.phase,
+      seconds_left: s.seconds_left,
+      totals: { player: s.player_total || 0, banker: s.banker_total || 0, tie: 0 },
+    }));
+    return { rooms };
+  }
+
   useEffect(() => {
-    let t;
-    const load = async () => {
-      try {
-        setErr("");
-        const [meRes, ...roomStates] = await Promise.all([
-          api.me(),
-          ...ROOMS.map((r) => api.getState(r).catch(() => null)),
-        ]);
-        setMe(meRes);
-        const map = {};
-        ROOMS.forEach((r, i) => (map[r] = roomStates[i]));
-        setRooms(map);
-      } catch (e) {
-        setErr(e.message || "load error");
-      }
-      try {
-        const lbRes = await api.leaderboardToday();
-        setLb(lbRes?.top || []);
-      } catch {}
-      t = setTimeout(load, 1500);
-    };
-    load();
-    return () => clearTimeout(t);
+    loadAll();
+    const t = setInterval(loadAll, 2000);
+    return () => clearInterval(t);
   }, []);
 
-  const logout = () => {
-    localStorage.removeItem("token");
-    nav("/auth");
-  };
+  function logout() {
+    authStore.clear();
+    nav("/auth", { replace: true });
+  }
 
   return (
     <div className="lobby-bg">
-      <div className="glow g1" />
-      <div className="glow g2" />
       <div className="lobby-shell">
         <div className="lobby-header">
           <div className="brand">
@@ -55,69 +61,61 @@ export default function Lobby() {
             <div className="brand-name">TOPZ Casino</div>
           </div>
           <div className="userbar">
-            <div className="chips">
-              <span className="chip">
-                <span className="chip-label">User</span>
-                <span className="chip-value">{me?.nickname || me?.username}</span>
-              </span>
-              <span className="chip">
-                <span className="chip-label">Balance</span>
-                <span className="chip-value">{me?.balance ?? "-"}</span>
-              </span>
-            </div>
             <button className="logout" onClick={logout}>登出</button>
+            <button className="auth-btn" onClick={() => nav("/admin")}>管理面板</button>
           </div>
         </div>
 
-        {err && <div className="notice error">{err}</div>}
-
-        <section className="hero">
-          <div className="hero-title">遊戲大廳</div>
-          <div className="hero-sub">選擇一個百家樂房間進入下注</div>
-          <div className="grid">
-            {ROOMS.map((r) => {
-              const s = rooms[r];
-              const seconds = s?.seconds_left ?? "-";
-              const round = s?.round_no ?? "-";
-              const total =
-                (s?.pools?.player || 0) + (s?.pools?.banker || 0) + (s?.pools?.tie || 0);
-              return (
-                <div
-                  key={r}
-                  className="tile"
-                  onClick={() => nav(`/baccarat/room/${r}`)}
-                >
-                  <div className="tile-title">百家樂 {r.toUpperCase()}</div>
-                  <div className="tile-desc">第 {round} 局 · 剩餘 {seconds}s</div>
-                  <div className="stat" style={{ marginTop: 10 }}>
-                    <div className="stat-val">{total}</div>
-                    <div className="stat-lab">當前總下注</div>
+        {loading ? (
+          <div className="lobby-loading">載入中…</div>
+        ) : err ? (
+          <div className="notice error">{err}</div>
+        ) : (
+          <>
+            <section className="hero">
+              <div className="hero-title">遊戲大廳</div>
+              <div className="hero-sub">選擇房間進入下注。資料每 2 秒更新。</div>
+              <div className="grid">
+                {rooms.map((r) => (
+                  <div
+                    key={r.room}
+                    className="tile"
+                    onClick={() => nav(`/baccarat/room/${r.room}`)}
+                  >
+                    <div className="tile-title">百家樂：{r.room.toUpperCase()}</div>
+                    <div className="tile-desc">局號：{r.round_no || 0}</div>
+                    <div className="tile-desc">
+                      狀態：{r.phase === "betting" ? "下注中" : r.phase === "revealing" ? "開獎中" : "等待中"}
+                    </div>
+                    <div className="tile-desc">倒數：{r.seconds_left || 0}s</div>
+                    <div className="tile-desc">
+                      下注合計：P {r.totals?.player ?? 0}｜B {r.totals?.banker ?? 0}｜T {r.totals?.tie ?? 0}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+                ))}
+              </div>
+            </section>
 
-        <section className="panel">
-          <div className="panel-title">今日排行榜（前 5）</div>
-          {lb.length === 0 ? (
-            <div className="lobby-loading">今日尚無資料</div>
-          ) : (
-            <div className="grid">
-              {lb.map((u, i) => (
-                <div key={u.username} className="stat">
-                  <div className="stat-val">#{i + 1} {u.nickname || u.username}</div>
-                  <div className="stat-lab">今日盈利：{u.profit}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+            <section className="panel">
+              <div className="panel-title">今日排行榜（下注總額 Top 5）</div>
+              {top5.length === 0 ? (
+                <div className="muted">暫無資料</div>
+              ) : (
+                <ol className="bullet">
+                  {top5.map((x, i) => (
+                    <li key={x.user_id || i}>
+                      {x.nickname || `user_${x.user_id}`}：{x.value}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          </>
+        )}
 
         <div className="lobby-footer">
-          <div className="muted">© TOPZ Casino</div>
-          <div className="muted">台北時間每日 00:00 重置</div>
+          <span className="muted">© TOPZ</span>
+          <span className="muted">台北時間每日 00:00 重置</span>
         </div>
       </div>
     </div>

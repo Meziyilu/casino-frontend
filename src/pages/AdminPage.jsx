@@ -1,96 +1,86 @@
-// src/pages/Admin.jsx
-import { useEffect, useState } from "react";
+// src/pages/AdminPage.jsx
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import "../styles/ui.css";
 
-export default function Admin() {
+export default function AdminPage() {
+  const nav = useNavigate();
   const [adminToken, setAdminToken] = useState(localStorage.getItem("ADMIN_TOKEN") || "");
-  const [uname, setUname] = useState("");
-  const [amount, setAmount] = useState(1000);
-  const [balance, setBalance] = useState(null);
-  const [msg, setMsg] = useState("");
+  const [u, setU] = useState("");
+  const [amt, setAmt] = useState(100);
+  const [log, setLog] = useState("");
 
-  useEffect(() => {
-    localStorage.setItem("ADMIN_TOKEN", adminToken || "");
-  }, [adminToken]);
+  function saveToken() {
+    localStorage.setItem("ADMIN_TOKEN", adminToken);
+    setLog("Admin Token 已儲存於瀏覽器。");
+  }
 
-  const grant = async () => {
+  async function grant() {
+    setLog("");
     try {
-      setMsg("");
-      await api.grant({ username: uname, amount: Number(amount), adminToken });
-      setMsg("✔ 發幣成功");
+      const r = await api.adminGrant({ username: u, amount: Number(amt) || 1, adminToken });
+      setLog(JSON.stringify(r));
     } catch (e) {
-      setMsg(`✖ ${e.message}`);
+      setLog(e?.message || "發幣失敗");
     }
-  };
+  }
 
-  const cleanup = async (mode) => {
+  async function cleanup(mode) {
+    setLog("");
     try {
-      setMsg("");
-      await api.cleanup({ mode, adminToken });
-      setMsg(`✔ 清理完成（${mode}）`);
+      const r = await api.adminCleanup({ mode, adminToken });
+      setLog(JSON.stringify(r));
     } catch (e) {
-      setMsg(`✖ ${e.message}`);
+      setLog(e?.message || "清理失敗");
     }
-  };
-
-  const query = async () => {
-    try {
-      setMsg("");
-      const r = await api.queryBalance({ username: uname, adminToken });
-      setBalance(r?.balance ?? null);
-      setMsg("✔ 查詢成功");
-    } catch (e) {
-      setMsg(`✖ ${e.message}`);
-    }
-  };
+  }
 
   return (
     <div className="lobby-bg">
-      <div className="glow g1" />
-      <div className="glow g2" />
       <div className="lobby-shell">
-        <div className="hero">
-          <div className="hero-title">管理面板（最小）</div>
-          <div className="hero-sub">需提供 X-ADMIN-TOKEN</div>
+        <div className="lobby-header">
+          <div className="brand">
+            <div className="logo">🛠️</div>
+            <div className="brand-name">管理面板</div>
+          </div>
+          <div className="userbar">
+            <button className="auth-btn" onClick={() => nav("/lobby")}>回大廳</button>
+          </div>
+        </div>
 
-          <label className="auth-label">ADMIN TOKEN</label>
+        <section className="panel">
+          <div className="panel-title">Admin Token</div>
           <input
             className="auth-input"
+            placeholder="X-ADMIN-TOKEN"
             value={adminToken}
             onChange={(e) => setAdminToken(e.target.value)}
-            placeholder="請輸入管理 token"
           />
+          <button className="auth-btn" style={{ marginTop: 8 }} onClick={saveToken}>儲存 Token</button>
+        </section>
 
-          <div className="grid" style={{ marginTop: 12 }}>
-            <div className="tile">
-              <div className="tile-title">發幣給使用者</div>
-              <label className="auth-label">Username</label>
-              <input className="auth-input" value={uname} onChange={(e) => setUname(e.target.value)} />
-              <label className="auth-label">Amount</label>
-              <input className="auth-input" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              <button className="auth-btn primary" style={{ marginTop: 10 }} onClick={grant}>發幣</button>
-            </div>
+        <section className="panel">
+          <div className="panel-title">發幣給使用者</div>
+          <input className="auth-input" placeholder="username" value={u} onChange={(e) => setU(e.target.value)} />
+          <input className="auth-input" type="number" min="1" placeholder="amount" value={amt} onChange={(e) => setAmt(e.target.value)} />
+          <button className="auth-btn primary" style={{ marginTop: 8 }} onClick={grant}>發幣</button>
+        </section>
 
-            <div className="tile">
-              <div className="tile-title">查詢餘額</div>
-              <label className="auth-label">Username</label>
-              <input className="auth-input" value={uname} onChange={(e) => setUname(e.target.value)} />
-              <button className="auth-btn ghost" style={{ marginTop: 10 }} onClick={query}>查詢</button>
-              <div className="auth-footer">餘額：{balance ?? "-"}</div>
-            </div>
-
-            <div className="tile">
-              <div className="tile-title">清理資料</div>
-              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                <button className="auth-btn ghost" onClick={() => cleanup("today")}>刪除今天以前</button>
-                <button className="auth-btn ghost" onClick={() => cleanup("all")}>刪除全部</button>
-              </div>
-            </div>
+        <section className="panel">
+          <div className="panel-title">清理資料</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="auth-btn" onClick={() => cleanup("today_or_older")}>刪除「今天以前」歷史</button>
+            <button className="auth-btn" onClick={() => cleanup("all")}>刪除全部</button>
           </div>
+        </section>
 
-          {msg && <div className="notice" style={{ marginTop: 12 }}>{msg}</div>}
-        </div>
+        {log && (
+          <section className="panel">
+            <div className="panel-title">結果</div>
+            <pre style={{ whiteSpace: "pre-wrap", color: "#a9f" }}>{log}</pre>
+          </section>
+        )}
       </div>
     </div>
   );
