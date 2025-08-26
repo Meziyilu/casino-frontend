@@ -1,7 +1,11 @@
 // src/main.jsx
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
-import './styles/ui.css'  // ✅ 這裡匯入一次就好
+import React from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App";
+import "./styles/ui.css"; // 全域樣式
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />)
+createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);

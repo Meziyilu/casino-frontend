@@ -1,69 +1,72 @@
 // src/api.js
 const BASE = import.meta.env.VITE_API_BASE || "https://api.topz0705.com";
 
+// 取得/設定 token
+export const authStore = {
+  get() {
+    return localStorage.getItem("token") || "";
+  },
+  set(t) {
+    if (t) localStorage.setItem("token", t);
+  },
+  clear() {
+    localStorage.removeItem("token");
+  },
+};
+
 async function j(path, opt = {}) {
-  const res = await fetch(BASE + path, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(opt.headers || {}) },
-    ...opt,
-  });
-  // 盡量把錯誤訊息傳出來
+  const headers = { "Content-Type": "application/json", ...(opt.headers || {}) };
+  const token = authStore.get();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const res = await fetch(BASE + path, { ...opt, headers });
+  const ct = res.headers.get("content-type") || "";
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
-      const t = await res.text();
-      if (t) msg = t;
+      if (ct.includes("application/json")) {
+        const jj = await res.json();
+        msg = JSON.stringify(jj);
+      } else {
+        const t = await res.text();
+        if (t) msg = t;
+      }
     } catch {}
     throw new Error(msg);
   }
-  // 有些 204 無內容
-  const ct = res.headers.get("content-type") || "";
   if (!ct.includes("application/json")) return null;
   return res.json();
 }
 
-// -------- Auth / User --------
+// ----- Auth -----
+async function register(username, password, nickname) {
+  // ⚠️ 扁平 JSON，不要再包一層
+  return j("/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password, nickname }),
+  });
+}
 async function login(username, password) {
   return j("/auth/login", {
     method: "POST",
     body: JSON.stringify({ username, password }),
   });
 }
-
-async function register(username, password, nickname) {
-  return j("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ username, password, nickname }),
-  });
-}
-
 async function me() {
-  return j("/me"); // 你的後端已實作 /me
+  return j("/auth/me");
 }
-
 async function logout() {
-  // 若後端沒有 /auth/logout，可直接清除前端 token；這裡留著以後擴充
-  try {
-    await j("/auth/logout", { method: "POST" });
-  } catch (_) {}
+  authStore.clear();
   return true;
 }
 
-// -------- Baccarat --------
-export const baccarat = {
-  rooms: () => j("/baccarat/rooms"),
-  state: (room) => j(`/baccarat/state?room=${encodeURIComponent(room)}`),
-  reveal: (room) => j(`/baccarat/reveal?room=${encodeURIComponent(room)}`),
-  history: (room, limit = 10) =>
-    j(`/baccarat/history?room=${encodeURIComponent(room)}&limit=${limit}`),
-  bet: (room, side, amount, userId) =>
-    j("/baccarat/bet", {
-      method: "POST",
-      body: JSON.stringify({ room, side, amount }),
-      headers: { "X-User-Id": String(userId ?? "") },
-    }),
-};
+// ----- Baccarat（先列房間、狀態；進房頁之後再接） -----
+async function rooms() {
+  return j("/baccarat/rooms");
+}
+async function state(room) {
+  return j(`/baccarat/state?room=${encodeURIComponent(room)}`);
+}
 
-// 統一聚合成一個物件，並且「具名匯出」與「預設匯出」都提供
-export const api = { login, register, me, logout, baccarat };
+export const api = { register, login, me, logout, rooms, state };
 export default api;
