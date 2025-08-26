@@ -1,33 +1,48 @@
 // src/api.js
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const BASE = import.meta.env.VITE_API_BASE || "https://api.topz0705.com";
 
-async function ro(path, opts = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-    },
+async function req(path, opt = {}) {
+  const r = await fetch(BASE + path, {
     credentials: "include",
-    ...opts,
+    headers: { "Content-Type": "application/json", ...(opt.headers || {}) },
+    ...opt,
   });
-  if (!res.ok) throw new Error(`API error ${res.status}`);
-  return res.json();
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try { const j = await r.json(); msg = j.detail || j.message || msg; } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
 }
 
 export const api = {
-  register: ({ username, password }) =>
-    ro("/auth/register", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    }),
+  // auth
+  register: (data) => req("/auth/register", { method: "POST", body: JSON.stringify(data) }),
+  login:    (data) => req("/auth/login",    { method: "POST", body: JSON.stringify(data) }),
 
-  login: ({ username, password }) =>
-    ro("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    }),
+  // lobby
+  lobbySummary: () => req("/lobby/summary"),
 
-  me: (username) => ro(`/me?username=${encodeURIComponent(username)}`),
+  // admin
+  adminStats:  (token) => req("/admin/stats",  { headers: { "X-Admin-Token": token } }),
+  adminUsers:  (token, body) => req("/admin/users", {
+    method: "POST",
+    headers: { "X-Admin-Token": token },
+    body: JSON.stringify(body),
+  }),
+  adminGrant:  (token, uid, amount) => req(`/admin/users/${uid}/grant`, {
+    method: "POST", headers: { "X-Admin-Token": token },
+    body: JSON.stringify({ amount }),
+  }),
+  adminSetBal: (token, uid, balance) => req(`/admin/users/${uid}/set-balance`, {
+    method: "POST", headers: { "X-Admin-Token": token },
+    body: JSON.stringify({ balance }),
+  }),
+  adminResetPw:(token, uid, new_password) => req(`/admin/users/${uid}/reset-password`, {
+    method: "POST", headers: { "X-Admin-Token": token },
+    body: JSON.stringify({ new_password }),
+  }),
+  adminDelete: (token, uid) => req(`/admin/users/${uid}`, {
+    method: "DELETE", headers: { "X-Admin-Token": token },
+  }),
 };
-
-// 同時匯出 default，方便 import api from "../api"
-export default api;
