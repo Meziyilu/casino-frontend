@@ -1,6 +1,7 @@
+// src/pages/Baccarat.jsx
 import { useEffect, useState } from "react";
 import { get, post } from "../api";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import BaccaratReveal from "../components/BaccaratReveal";
 import "../components/baccaratReveal.css";
 
@@ -19,6 +20,8 @@ const EXTRA = [
 
 export default function Baccarat() {
   const nav = useNavigate();
+  const { roomId } = useParams();           // 讀 URL 參數
+  const roomKey = `room${roomId || "1"}`;   // 後端用的 room 值：room1/room2/room3
   const token = localStorage.getItem("token") || "";
 
   const [me, setMe] = useState(null);
@@ -35,12 +38,9 @@ export default function Baccarat() {
   const [remain, setRemain] = useState(0);
   const [msg, setMsg] = useState("");
 
-  // 動畫參數
   const defaultTiming = { p1b1:800, p2b2:1700, p3:2600, b3:3200, glow:3700 };
   const [revealMs] = useState(() => Number(localStorage.getItem("revealMs") || 15000));
   const [soundOn] = useState(() => localStorage.getItem("revealSoundOn") !== "0");
-
-  // 開牌動畫資料
   const [revealData, setRevealData] = useState({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
 
   // 首次載入：身份、餘額、歷史
@@ -57,14 +57,15 @@ export default function Baccarat() {
       try { await refreshBalance(); } catch {}
       try { await loadHistory(); } catch {}
     })();
-  }, []);
+  // 變更房間時也重抓
+  }, [roomKey]);
 
-  // 每秒輪詢目前局況，並在「關單 / 換局」觸發動畫（含 last10 → history fallback）
+  // 輪詢目前局況（關單/換局時觸發動畫）— 依房間查詢
   useEffect(() => {
     let last = { round_no: null, status: null };
     const t = setInterval(async () => {
       try {
-        const c = await get("/rounds/current");
+        const c = await get(`/rounds/current?room=${roomKey}`);
         setCurrent(c);
         setRemain(c.remain_sec ?? 0);
 
@@ -75,19 +76,18 @@ export default function Baccarat() {
         if (toGlow) {
           let top = null;
           try {
-            const h1 = await get("/rounds/last10");
+            const h1 = await get(`/rounds/last10?room=${roomKey}`);
             const rows1 = h1.rows || h1 || [];
             top = rows1[0];
           } catch (e) {
             if (e.status === 404) {
               try {
-                const h2 = await get("/rounds/history");
+                const h2 = await get(`/rounds/history?room=${roomKey}`);
                 const rows2 = h2.rows || h2 || [];
                 top = rows2[0];
               } catch (_) {}
             }
           }
-
           if (top && top.outcome) {
             setRevealData({
               show: true,
@@ -101,30 +101,27 @@ export default function Baccarat() {
         }
 
         last = { round_no: c.round_no, status: c.status };
-      } catch {
-        // 忽略暫時錯誤，不讓整頁掛掉
-      }
+      } catch {}
     }, 1000);
 
     return () => clearInterval(t);
-  }, []);
+  }, [roomKey]);
 
   async function refreshBalance() {
     const b = await get("/balance", token);
     setBalance(b.balance);
   }
 
-  // 取得歷史（last10 → history Fallback）
   async function loadHistory() {
     try {
-      const res = await get("/rounds/last10");
+      const res = await get(`/rounds/last10?room=${roomKey}`);
       setHistory(res.rows || res || []);
       return;
     } catch (e) {
       if (e.status !== 404) throw e;
     }
     try {
-      const res2 = await get("/rounds/history");
+      const res2 = await get(`/rounds/history?room=${roomKey}`);
       setHistory(res2.rows || res2 || []);
     } catch {
       setHistory([]);
@@ -140,7 +137,7 @@ export default function Baccarat() {
     if (betAmount <= 0) { setMsg("請選取籌碼與押注金額"); return; }
     const targetSide = extraSide || selectSide;
     try {
-      await post("/bet", { side: targetSide, amount: betAmount }, token);
+      await post(`/bet?room=${roomKey}`, { side: targetSide, amount: betAmount }, token);
       await refreshBalance();
       setMsg("下注成功！");
       setBetAmount(0); setExtraSide(null);
@@ -158,8 +155,8 @@ export default function Baccarat() {
     <main style={page}>
       <header style={header}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <button onClick={() => nav("/")} style={btnOutline}>← 回大廳</button>
-          <h1 style={{ margin:0, fontSize:20 }}>百家樂</h1>
+          <button onClick={() => nav("/game/baccarat")} style={btnOutline}>← 回房間列表</button>
+          <h1 style={{ margin:0, fontSize:20 }}>百家樂 · 房間 {roomId || "1"}</h1>
         </div>
         <div style={{ textAlign:"right" }}>
           <div style={{ fontSize: 14 }}>玩家：{me?.username ?? "—"} {isAdmin && <span style={tag}>ADMIN</span>}</div>
@@ -168,7 +165,7 @@ export default function Baccarat() {
         </div>
       </header>
 
-      {/* ✅ 開牌動畫固定在下注面板上方（sticky + 漸層） */}
+      {/* 開獎動畫（置頂） */}
       <BaccaratReveal
         visible={revealData.show}
         winner={revealData.winner}
@@ -177,8 +174,8 @@ export default function Baccarat() {
         playerDraw3={revealData.p3}
         bankerDraw3={revealData.b3}
         durationMs={revealMs}
-        bellSrc={soundOn ? "/sounds/bell.mp3" : undefined}
-        timings={{ p1b1:800, p2b2:1700, p3:2600, b3:3200, glow:3700 }}
+        bellSrc={"/sounds/bell.mp3"}
+        timings={defaultTiming}
         onFinish={async () => {
           setRevealData({ show:false, winner:null, pt:0, bt:0, p3:false, b3:false });
           try { await loadHistory(); } catch {}
@@ -189,6 +186,7 @@ export default function Baccarat() {
       {/* 下注面板 */}
       <section style={board}>
         <div style={boardTop}>
+          <div>房號：<b>{roomId || "1"}</b></div>
           <div>局號：<b>{current.round_no ?? "-"}</b></div>
           <div>狀態：<b>{current.status}</b></div>
           {current.status === "open" && <div>倒數：<b>{remain}s</b></div>}
@@ -244,7 +242,7 @@ export default function Baccarat() {
       {/* 歷史區 */}
       <section style={card}>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>近十局</h2>
+          <h2 style={{ margin: 0, fontSize: 18 }}>近十局（房 {roomId || "1"}）</h2>
           <button onClick={loadHistory} style={btnOutline}>重新整理</button>
         </div>
         <Roadmap rows={history} />
@@ -276,7 +274,6 @@ export default function Baccarat() {
   );
 }
 
-/* ====== 路紙（簡易大路） ====== */
 function Roadmap({ rows }) {
   const seq = rows.slice().reverse().map(r => r.outcome).filter(Boolean);
   const grid = Array.from({ length: 6 }, () => Array(12).fill(null));
@@ -298,11 +295,11 @@ function Roadmap({ rows }) {
   );
 }
 
-/* ====== 樣式 ====== */
+/* ====== 樣式（沿用前版） ====== */
 const page   = { padding: 20, fontFamily: "ui-sans-serif, system-ui", background:"#f6f7fb", minHeight:"100vh" };
 const header = { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 };
 const board  = { border: "1px solid #eee", borderRadius: 12, padding: 16, background: "#fff", marginBottom: 16, boxShadow:"0 2px 10px rgba(0,0,0,0.03)" };
-const boardTop = { display:"flex", gap:16, alignItems:"center", marginBottom: 10 };
+const boardTop = { display:"flex", gap:16, alignItems:"center", marginBottom: 10, flexWrap:"wrap" };
 const sideGrid = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 };
 const sideBtn  = { border: "2px solid #ccc", borderRadius: 12, padding: "18px 8px", cursor: "pointer", background: "#fff" };
 const chipRow  = { display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" };
