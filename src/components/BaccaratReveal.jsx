@@ -1,11 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import "./baccaratReveal.css";
 
 /**
- * 升級版開牌動畫（搭配 baccaratReveal.css）：
- * - 3D 翻牌 + 陰影
- * - 牌面清楚（角落 Rank + 花色、中央 Pip）
- * - 勝利方金光 + 粒子
+ * 升級版開牌動畫（外部 CSS 版，避免動態注入造成白畫面）：
+ * - 翻牌動畫（3D + 陰影）
+ * - 清晰牌面（角落 rank + 中央 pip + 花色）
+ * - 勝利方金光閃爍（含 shimmer 條與粒子）
  * - sticky 置頂顯示
+ *
+ * Props:
+ *  visible: boolean
+ *  winner: "player"|"banker"|"tie" | null
+ *  playerTotal, bankerTotal: number (0-9)
+ *  playerDraw3, bankerDraw3: boolean
+ *  durationMs?: number (預設 15000)
+ *  bellSrc?: string (開獎鈴聲，可選)
+ *  timings?: { p1b1, p2b2, p3, b3, glow } 毫秒
+ *  onFinish?: () => void
  */
 export default function BaccaratReveal({
   visible,
@@ -16,21 +27,25 @@ export default function BaccaratReveal({
   bankerDraw3 = false,
   durationMs = 15000,
   bellSrc,
-  timings = { p1b1: 900, p2b2: 1900, p3: 2800, b3: 3300, glow: 3800 },
+  timings = { p1b1: 900, p2b2: 1900, p3: 2900, b3: 3400, glow: 3800 },
   onFinish,
 }) {
   const [phase, setPhase] = useState("idle");
   const audioRef = useRef(null);
 
+  // 時序控制（純前端狀態，不做 DOM 注入）
   useEffect(() => {
     if (!visible) { setPhase("idle"); return; }
     setPhase("start");
 
+    // 鈴聲（保護性 try/catch，避免白畫面）
     if (bellSrc) {
-      const a = new Audio(bellSrc);
-      audioRef.current = a;
-      a.volume = 0.85;
-      a.play().catch(()=>{});
+      try {
+        const a = new Audio(bellSrc);
+        audioRef.current = a;
+        a.volume = 0.85;
+        a.play().catch(() => {});
+      } catch (_) {}
     }
 
     const t1 = setTimeout(() => setPhase("p1b1"), timings.p1b1);
@@ -41,7 +56,7 @@ export default function BaccaratReveal({
     const t6 = setTimeout(() => onFinish && onFinish(), durationMs);
 
     return () => [t1,t2,t3,t4,t5,t6].forEach(clearTimeout);
-  }, [visible]);
+  }, [visible, playerDraw3, bankerDraw3, timings, durationMs, onFinish, bellSrc]);
 
   if (!visible) return null;
 
@@ -50,22 +65,40 @@ export default function BaccaratReveal({
   return (
     <div className="brv__overlay">
       <div className="brv__panel">
+        {/* 標題 + shimmer 條 */}
         <div className="brv__titleRow">
           <div className="brv__title">{phase === "glow" ? "結果" : "開獎中…"}</div>
           <div className={`brv__shimmer ${phase==="glow" ? "run" : ""}`} />
         </div>
 
+        {/* 雙邊手牌 */}
         <div className="brv__hands">
-          <Hand label="PLAYER" color="#2b6cb0" total={playerTotal} show3={playerDraw3} phase={phase} side="player" />
-          <Hand label="BANKER" color="#dc2626" total={bankerTotal} show3={bankerDraw3} phase={phase} side="banker" />
+          <Hand
+            label="PLAYER"
+            color="#2b6cb0"
+            total={playerTotal}
+            show3={playerDraw3}
+            phase={phase}
+            side="player"
+          />
+          <Hand
+            label="BANKER"
+            color="#dc2626"
+            total={bankerTotal}
+            show3={bankerDraw3}
+            phase={phase}
+            side="banker"
+          />
         </div>
 
+        {/* 結果 */}
         <div className="brv__result">
           {phase === "glow"
             ? <span>勝方：<b className="brv__winner">{(winner || "").toUpperCase()}</b></span>
             : "翻牌進行中…"}
         </div>
 
+        {/* 勝利方金光 + 粒子 */}
         {phase === "glow" && (
           <div className="brv__glowWrap">
             <div className="brv__glowBar" style={{ boxShadow: `0 0 26px 8px ${glowColor}` }} />
@@ -77,6 +110,7 @@ export default function BaccaratReveal({
   );
 }
 
+/* ====== 子元件：手牌 ====== */
 function Hand({ label, color, total, show3, phase, side }) {
   const [show, setShow] = useState({ c1:false, c2:false, c3:false });
 
@@ -85,8 +119,9 @@ function Hand({ label, color, total, show3, phase, side }) {
     if (phase === "p2b2") setShow(s=> ({...s, c2:true}));
     if (phase === "p3" && side === "player" && show3) setShow(s=> ({...s, c3:true}));
     if (phase === "b3" && side === "banker" && show3) setShow(s=> ({...s, c3:true}));
-  }, [phase]);
+  }, [phase, show3, side]);
 
+  // 產生 3 張卡的「圖案資料」（純視覺）
   const cards = useMemo(() => {
     const seed = side === "player" ? 3 : 6;
     const ranks = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
@@ -111,13 +146,16 @@ function Hand({ label, color, total, show3, phase, side }) {
   );
 }
 
+/* ====== 子元件：單張卡 ====== */
 function Card({ visible, dim, data }) {
   const { rank, suit } = data || {};
   const isRed = suit === "♥" || suit === "♦";
 
   return (
     <div className={`brv__card ${visible ? "show" : ""}`} style={{ opacity: dim ? .35 : 1 }}>
+      {/* 背面 */}
       <div className="brv__cardFace brv__back" />
+      {/* 正面 */}
       <div className="brv__cardFace brv__front">
         <div className="brv__corner" style={{ color: isRed ? "#d11" : "#111" }}>
           <div className="brv__rank">{rank}</div>
@@ -133,6 +171,7 @@ function Card({ visible, dim, data }) {
   );
 }
 
+/* ====== 勝利粒子 ====== */
 function Sparkles({ color="#f5c542", count=18 }) {
   const items = Array.from({ length: count }).map((_,i)=> i);
   return (
