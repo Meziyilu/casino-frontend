@@ -1,40 +1,117 @@
-// src/pages/BaccaratRooms.jsx
-import { useNavigate } from "react-router-dom";
+// src/pages/BaccaratRoom.jsx
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import api, { baccarat as B } from "../api";
+import BaccaratReveal from "../components/BaccaratReveal";
 
-export default function BaccaratRooms() {
+export default function BaccaratRoom(){
+  const { roomId } = useParams();
   const nav = useNavigate();
-  const rooms = [
-    { id: "1", name: "百家樂房間 1", desc: "一般桌，60s 下注" },
-    { id: "2", name: "百家樂房間 2", desc: "加速桌，30s 下注" },
-    { id: "3", name: "百家樂房間 3", desc: "慢速桌，90s 下注" },
-  ];
+  const [state,setState] = useState(null);
+  const [hist,setHist] = useState([]);
+  const [reveal,setReveal] = useState({show:false});
+  const [myBet,setMyBet] = useState({side:null, amount:0});
+  const [user,setUser] = useState(null);
+  const timer = useRef();
+
+  useEffect(()=>{ (async()=>{
+    try{
+      // 取得目前登入者（若你已有全域 user，這段換成你的）
+      const me = await fetch("/me",{credentials:"include"}).then(r=>r.ok?r.json():null).catch(()=>null);
+      setUser(me);
+    }catch{}
+  })() },[]);
+
+  // 拉 state & history
+  useEffect(()=>{
+    if(!roomId) return;
+    const loop = async ()=>{
+      try{
+        const s = await B.state(roomId);
+        setState(s);
+        if(s.status==="dealing"){ // 播動畫
+          const r = await B.reveal(roomId);
+          setReveal({
+            show: true,
+            winner: r.winner,
+            pc: r.player_cards,
+            bc: r.banker_cards,
+            pt: r.player_total,
+            bt: r.banker_total
+          });
+        }
+        const h = await B.history(roomId, 12);
+        setHist(h);
+      }catch(e){ console.log(e); }
+    };
+    loop();
+    clearInterval(timer.current);
+    timer.current = setInterval(loop, 1000);
+    return ()=> clearInterval(timer.current);
+  },[roomId]);
+
+  const placeBet = async (side, amount)=>{
+    if(!user){ alert("請先登入"); return; }
+    try{
+      await B.bet(roomId, side, amount, user?.id || 0);
+      setMyBet({side, amount});
+    }catch(e){ alert("下注失敗：" + e.message); }
+  };
 
   return (
-    <main style={page}>
-      <header style={header}>
-        <button onClick={() => nav("/")} style={btnOutline}>← 回大廳</button>
-        <h1 style={{margin:0}}>百家樂房間選擇</h1>
-        <div />
+    <main className="page">
+      <header className="hdr">
+        <button onClick={()=>nav("/lobby")} className="back">← 大廳</button>
+        <div className="title">百家樂 {roomId.toUpperCase()}</div>
+        <div className="spacer"/>
       </header>
 
-      <section style={grid}>
-        {rooms.map(r => (
-          <button
-            key={r.id}
-            onClick={() => nav(`/game/baccarat/room/${r.id}`)}
-            style={card}
-          >
-            <div style={{fontWeight:800, fontSize:18}}>{r.name}</div>
-            <div style={{opacity:.8, marginTop:6}}>{r.desc}</div>
-          </button>
-        ))}
+      {/* 開獎動畫固定在下注面板上方 */}
+      <BaccaratReveal
+        show={reveal.show}
+        winner={reveal.winner}
+        pc={reveal.pc} bc={reveal.bc}
+        pt={reveal.pt} bt={reveal.bt}
+        onEnd={()=> setReveal({show:false})}
+      />
+
+      <section className="board">
+        <div className="lane">
+          <div className="timer">
+            倒數：<b>{state?.seconds_left ?? 0}</b>s
+            <span className={`badge ${state?.status || ""}`}>{state?.status}</span>
+          </div>
+
+          <div className="totals">
+            <div>下注人數：{state?.bettors ?? 0}</div>
+            <div>總額 P/B/T：{state?.totals?.player ?? 0} / {state?.totals?.banker ?? 0} / {state?.totals?.tie ?? 0}</div>
+          </div>
+
+          <div className="actions">
+            <Btn onClick={()=>placeBet("player",100)} text="閒 100"/>
+            <Btn onClick={()=>placeBet("banker",100)} text="莊 100"/>
+            <Btn onClick={()=>placeBet("tie",50)} text="和 50"/>
+          </div>
+        </div>
+
+        <div className="lane">
+          <div className="panel">
+            <div className="panel-title">今日近 12 局</div>
+            <div className="road">
+              {hist.map(h=>(
+                <div key={h.round_no} className={`dot ${h.winner||"na"}`} title={`#${h.round_no} ${h.pt??"-"}:${h.bt??"-"}`} />
+              ))}
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-title">我的下注</div>
+            <div>本局：{myBet.side||"-"} / {myBet.amount||0}</div>
+          </div>
+        </div>
       </section>
     </main>
   );
 }
 
-const page   = { padding: 20, fontFamily: "ui-sans-serif, system-ui", background:"#f6f7fb", minHeight:"100vh" };
-const header = { display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom: 16 };
-const btnOutline = { padding: "8px 12px", background:"transparent", color:"#111", border:"1px solid #ccc", borderRadius:10, cursor:"pointer" };
-const grid = { display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(240px, 1fr))", gap:12 };
-const card = { textAlign:"left", background:"#fff", border:"1px solid #eee", borderRadius:12, padding:16, cursor:"pointer", boxShadow:"0 2px 10px rgba(0,0,0,.03)" };
+function Btn({onClick,text}){ return <button className="pill" onClick={onClick}>{text}</button>; }
