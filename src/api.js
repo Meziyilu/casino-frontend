@@ -1,45 +1,63 @@
 // src/api.js
-export const API_BASE = "https://api.topz0705.com";
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  "https://api.topz0705.com";
 
-export const authStore = {
-  get token() { return localStorage.getItem("token"); },
-  set token(v) { v ? localStorage.setItem("token", v) : localStorage.removeItem("token"); },
-  clear() { localStorage.removeItem("token"); }
-};
+function withCreds(opts = {}) {
+  const token = localStorage.getItem("jwt") || "";
+  return {
+    ...opts,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  };
+}
 
-async function ro(path, { method = "GET", body, headers = {} } = {}) {
-  const h = { "Content-Type": "application/json", ...headers };
-  if (authStore.token) h.Authorization = `Bearer ${authStore.token}`;
-  const res = await fetch(`${API_BASE}${path}`, {
-    method, headers: h, body: body ? JSON.stringify(body) : undefined
-  });
-  const tx = await res.text();
-  let data = null; try { data = tx ? JSON.parse(tx) : null; } catch { data = { raw: tx }; }
-  if (!res.ok) { const msg = data?.detail || data?.error || res.statusText; const e = new Error(msg); e.status = res.status; e.data = data; throw e; }
-  return data;
+async function safeFetch(url, opts = {}, { signal } = {}) {
+  try {
+    const res = await fetch(url, { ...withCreds(opts), signal });
+    // 後端錯誤也要吞，回給呼叫端判斷
+    if (!res.ok) {
+      // 盡量讀出 json 錯誤訊息，但不要 throw
+      let detail = null;
+      try { detail = await res.json(); } catch {}
+      return { ok: false, status: res.status, detail };
+    }
+    const data = await res.json();
+    return { ok: true, data };
+  } catch (err) {
+    // CORS / 連線中斷 / 超時 等
+    return { ok: false, error: err?.message || "fetch failed" };
+  }
 }
 
 export const api = {
-  // auth
-  register({ username, password, nickname }) { return ro(`/auth/register`, { method: "POST", body: { username, password, nickname } }); },
-  login({ username, password }) { return ro(`/auth/login`, { method: "POST", body: { username, password } }); },
-  me() { return ro(`/auth/me`); },
-
-  // lobby / rooms
-  rooms() { return ro(`/baccarat/rooms`); },
-  state(room) { return ro(`/baccarat/state?room=${encodeURIComponent(room)}`); },
-  bet({ room, side, amount }) { return ro(`/baccarat/bet`, { method: "POST", body: { room, side, amount } }); },
-  history({ room, limit = 10 }) { return ro(`/baccarat/history?room=${encodeURIComponent(room)}&limit=${limit}`); },
-  leaderboardToday() { return ro(`/baccarat/leaderboard/today`); },
-
-  // admin
-  adminGrant({ username, amount, adminToken }) {
-    return ro(`/baccarat/admin/grant`, { method: "POST", headers: { "X-ADMIN-TOKEN": adminToken }, body: { username, amount } });
+  async rooms({ signal } = {}) {
+    const r = await safeFetch(`${API_BASE}/baccarat/rooms`, {}, { signal });
+    if (!r.ok) return null;
+    return r.data?.rooms || null;
   },
-  adminCleanup({ mode, adminToken }) {
-    return ro(`/baccarat/admin/cleanup`, { method: "POST", headers: { "X-ADMIN-TOKEN": adminToken }, body: { mode } });
+  async me({ signal } = {}) {
+    const r = await safeFetch(`${API_BASE}/auth/me`, {}, { signal });
+    if (!r.ok) return null;
+    return r.data || null;
   },
-  adminBalance({ username, adminToken }) {
-    return ro(`/baccarat/admin/balance?username=${encodeURIComponent(username)}`, { headers: { "X-ADMIN-TOKEN": adminToken } });
+  async login(username, password) {
+    const r = await safeFetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    });
+    if (!r.ok) return { ok: false, error: r.detail || r.status || "login failed" };
+    // 後端會 Set-Cookie 或回 JWT（看你的實作）
+    // 若有回 token，記到 localStorage
+    if (r.data?.token) localStorage.setItem("jwt", r.data.token);
+    return { ok: true, data: r.data };
+  },
+  async logout() {
+    localStorage.removeItem("jwt");
+    return { ok: true };
   },
 };
