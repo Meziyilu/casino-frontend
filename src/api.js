@@ -1,72 +1,92 @@
 // src/api.js
-const BASE = import.meta.env.VITE_API_BASE || "https://api.topz0705.com";
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  "https://api.topz0705.com";
 
-// 取得/設定 token
-export const authStore = {
-  get() {
-    return localStorage.getItem("token") || "";
-  },
-  set(t) {
-    if (t) localStorage.setItem("token", t);
-  },
-  clear() {
-    localStorage.removeItem("token");
-  },
-};
+function authHeaders(extra = {}) {
+  const t = localStorage.getItem("token");
+  const h = {
+    "Content-Type": "application/json",
+    ...extra,
+  };
+  if (t) h.Authorization = `Bearer ${t}`;
+  return h;
+}
 
-async function j(path, opt = {}) {
-  const headers = { "Content-Type": "application/json", ...(opt.headers || {}) };
-  const token = authStore.get();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
-  const res = await fetch(BASE + path, { ...opt, headers });
-  const ct = res.headers.get("content-type") || "";
+async function rq(path, opt = {}) {
+  const res = await fetch(`${API_BASE}${path}`, opt);
+  // 嘗試解析 JSON，避免 204/空字串直接 throw
+  let data = null;
+  try { data = await res.json(); } catch { /* ignore */ }
   if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try {
-      if (ct.includes("application/json")) {
-        const jj = await res.json();
-        msg = JSON.stringify(jj);
-      } else {
-        const t = await res.text();
-        if (t) msg = t;
-      }
-    } catch {}
+    const msg = (data && (data.detail || data.error)) || `HTTP ${res.status}`;
     throw new Error(msg);
   }
-  if (!ct.includes("application/json")) return null;
-  return res.json();
+  return data;
 }
 
-// ----- Auth -----
-async function register(username, password, nickname) {
-  // ⚠️ 扁平 JSON，不要再包一層
-  return j("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ username, password, nickname }),
-  });
-}
-async function login(username, password) {
-  return j("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ username, password }),
-  });
-}
-async function me() {
-  return j("/auth/me");
-}
-async function logout() {
-  authStore.clear();
-  return true;
-}
+export const api = {
+  // ---- Auth ----
+  async register({ username, password, nickname }) {
+    return rq(`/auth/register`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ username, password, nickname }),
+    });
+  },
+  async login({ username, password }) {
+    return rq(`/auth/login`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ username, password }),
+    });
+  },
+  async me() {
+    return rq(`/auth/me`, { headers: authHeaders() });
+  },
 
-// ----- Baccarat（先列房間、狀態；進房頁之後再接） -----
-async function rooms() {
-  return j("/baccarat/rooms");
-}
-async function state(room) {
-  return j(`/baccarat/state?room=${encodeURIComponent(room)}`);
-}
+  // ---- Baccarat ----
+  async getState(room) {
+    return rq(`/baccarat/state?room=${encodeURIComponent(room)}`, {
+      headers: authHeaders(),
+    });
+  },
+  async bet({ room, side, amount }) {
+    return rq(`/baccarat/bet`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ room, side, amount }),
+    });
+  },
+  async history(room, limit = 10) {
+    return rq(`/baccarat/history?room=${encodeURIComponent(room)}&limit=${limit}`, {
+      headers: authHeaders(),
+    });
+  },
 
-export const api = { register, login, me, logout, rooms, state };
-export default api;
+  // ---- Leaderboard ----
+  async leaderboardToday() {
+    return rq(`/leaderboard/today`, { headers: authHeaders() });
+  },
+
+  // ---- Admin ----
+  async grant({ username, amount, adminToken }) {
+    return rq(`/admin/grant`, {
+      method: "POST",
+      headers: authHeaders({ "X-ADMIN-TOKEN": adminToken }),
+      body: JSON.stringify({ username, amount }),
+    });
+  },
+  async cleanup({ mode, adminToken }) {
+    return rq(`/admin/cleanup`, {
+      method: "POST",
+      headers: authHeaders({ "X-ADMIN-TOKEN": adminToken }),
+      body: JSON.stringify({ mode }),
+    });
+  },
+  async queryBalance({ username, adminToken }) {
+    return rq(`/admin/balance?username=${encodeURIComponent(username)}`, {
+      headers: authHeaders({ "X-ADMIN-TOKEN": adminToken }),
+    });
+  },
+};

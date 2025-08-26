@@ -2,11 +2,12 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import AuthPage from "./pages/AuthPage";
 import Lobby from "./pages/Lobby";
+import BaccaratRoom from "./pages/BaccaratRoom";
+import Admin from "./pages/Admin";
 
 function RequireAuth({ children }) {
-  const token = localStorage.getItem("token");
-  if (!token) return <Navigate to="/auth" replace />;
-  return children;
+  const t = localStorage.getItem("token");
+  return t ? children : <Navigate to="/auth" replace />;
 }
 
 export default function App() {
@@ -22,7 +23,22 @@ export default function App() {
             </RequireAuth>
           }
         />
-        {/* 預留：之後你要接 /baccarat/room/:id 的房間頁 */}
+        <Route
+          path="/baccarat/room/:roomId"
+          element={
+            <RequireAuth>
+              <BaccaratRoom />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <RequireAuth>
+              <Admin />
+            </RequireAuth>
+          }
+        />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
