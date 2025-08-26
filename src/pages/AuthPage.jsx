@@ -1,105 +1,78 @@
 import { useState } from "react";
-import { api } from "../api";
-import "../styles/ui.css";
+import { useNavigate } from "react-router-dom";
+import api from "../api";
 
 export default function AuthPage() {
   const [mode, setMode] = useState("login"); // login | register
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showPass, setShowPass] = useState(false);
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [nickname, setNickname] = useState("");
+  const [error, setError] = useState("");
 
-  async function onSubmit(e) {
+  const navigate = useNavigate();
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    setErr("");
-    if (!username.trim() || !password.trim()) {
-      setErr("請輸入帳號與密碼");
-      return;
-    }
-    setLoading(true);
+    setError("");
+
     try {
-      if (mode === "register") {
-        await api.register({ username, password });
+      if (mode === "login") {
+        const res = await api.login(username, password);
+        localStorage.setItem("token", res.token);
+        localStorage.setItem("username", username);
+        navigate("/lobby");   // ✅ React Router 內部跳轉
+      } else {
+        await api.register(username, password, nickname);
+        alert("註冊成功！請登入");
+        setMode("login");
       }
-      const r = await api.login({ username, password });
-
-      // 儲存基本資訊供大廳使用（簡易方案）
-      localStorage.setItem("uid", String(r.id || ""));
-      localStorage.setItem("username", r.username || username);
-
-      window.location.href = "/lobby";
-    } catch (e) {
-      setErr(e.message || "發生錯誤，請稍後再試");
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error(err);
+      setError("登入/註冊失敗，請確認帳號密碼");
     }
   }
 
   return (
-    <div className="auth-bg">
-      <div className="glow g1" />
-      <div className="glow g2" />
-      <div className="glow g3" />
+    <div className="auth-page">
+      <form className="auth-card" onSubmit={handleSubmit}>
+        <h2>{mode === "login" ? "登入" : "註冊"}</h2>
 
-      <main className="auth-wrap">
-        <form className="auth-card" onSubmit={onSubmit}>
-          <h1 className="auth-title">{mode === "login" ? "登入" : "建立帳號"}</h1>
-          <p className="auth-subtitle">
-            {mode === "login" ? "歡迎回來，請登入您的帳號" : "填寫以下資訊以建立帳號"}
-          </p>
-
-          <label className="auth-label">帳號</label>
+        <input
+          type="text"
+          placeholder="帳號"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+        />
+        <input
+          type="password"
+          placeholder="密碼"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        {mode === "register" && (
           <input
-            className="auth-input"
-            placeholder="輸入帳號"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            maxLength={30}
-            autoComplete="username"
+            type="text"
+            placeholder="暱稱（可留空）"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
           />
+        )}
 
-          <label className="auth-label auth-label-row">
-            <span>密碼</span>
-            <button
-              type="button"
-              className="link-btn"
-              onClick={() => setShowPass((s) => !s)}
-              aria-label="顯示/隱藏密碼"
-            >
-              {showPass ? "隱藏" : "顯示"}
-            </button>
-          </label>
-          <input
-            className="auth-input"
-            placeholder="輸入密碼"
-            type={showPass ? "text" : "password"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            maxLength={50}
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
-          />
+        <button type="submit">
+          {mode === "login" ? "登入" : "建立帳號"}
+        </button>
+        <button
+          type="button"
+          className="switch-btn"
+          onClick={() => setMode(mode === "login" ? "register" : "login")}
+        >
+          切換到 {mode === "login" ? "註冊" : "登入"}
+        </button>
 
-          {err && <div className="auth-error">{err}</div>}
-
-          <button className="auth-btn primary" disabled={loading}>
-            {loading ? "處理中…" : mode === "login" ? "登入" : "建立帳號"}
-          </button>
-
-          <button
-            type="button"
-            className="auth-btn ghost"
-            onClick={() => { setErr(""); setMode(mode === "login" ? "register" : "login"); }}
-            disabled={loading}
-          >
-            {mode === "login" ? "切換到註冊" : "已有帳號？前往登入"}
-          </button>
-
-          <footer className="auth-footer">
-            <span>© {new Date().getFullYear()} TOPZ</span>
-          </footer>
-        </form>
-      </main>
+        {error && <p className="error">{error}</p>}
+      </form>
     </div>
   );
 }
