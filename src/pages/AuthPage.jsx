@@ -1,92 +1,105 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api } from '../api'
+import { useState } from "react";
+import { api } from "../api";
+import "../styles/ui.css";
 
 export default function AuthPage() {
-  const nav = useNavigate()
-  const [mode, setMode] = useState('login')
-  const [u, setU] = useState('')
-  const [p, setP] = useState('')
-  const [msg, setMsg] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [mode, setMode] = useState("login"); // login | register
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const submit = async (e) => {
-    e.preventDefault()
-    setMsg(null); setLoading(true)
+  async function onSubmit(e) {
+    e.preventDefault();
+    setErr("");
+    if (!username.trim() || !password.trim()) {
+      setErr("請輸入帳號與密碼");
+      return;
+    }
+    setLoading(true);
     try {
-      if (mode === 'register') {
-        await api.register(u, p)
-        setMsg('註冊成功，請登入'); setMode('login')
-      } else {
-        const r = await api.login(u, p)
-        localStorage.setItem('token', r.token)
-        nav('/lobby', { replace: true })
+      if (mode === "register") {
+        await api.register({ username, password });
       }
-    } catch (err) {
-      setMsg(err.message || 'Failed to fetch')
+      const r = await api.login({ username, password });
+
+      // 儲存基本資訊供大廳使用（簡易方案）
+      localStorage.setItem("uid", String(r.id || ""));
+      localStorage.setItem("username", r.username || username);
+
+      window.location.href = "/lobby";
+    } catch (e) {
+      setErr(e.message || "發生錯誤，請稍後再試");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   return (
-    <main style={page}>
-      <form onSubmit={submit} style={card}>
-        <h2 style={title}>{mode==='login' ? '登入' : '註冊'}</h2>
+    <div className="auth-bg">
+      <div className="glow g1" />
+      <div className="glow g2" />
+      <div className="glow g3" />
 
-        <label style={label}>帳號</label>
-        <input style={input} value={u} onChange={(e)=>setU(e.target.value)} required placeholder="username" />
+      <main className="auth-wrap">
+        <form className="auth-card" onSubmit={onSubmit}>
+          <h1 className="auth-title">{mode === "login" ? "登入" : "建立帳號"}</h1>
+          <p className="auth-subtitle">
+            {mode === "login" ? "歡迎回來，請登入您的帳號" : "填寫以下資訊以建立帳號"}
+          </p>
 
-        <label style={label}>密碼</label>
-        <input style={input} type="password" value={p} onChange={(e)=>setP(e.target.value)} required placeholder="password" />
+          <label className="auth-label">帳號</label>
+          <input
+            className="auth-input"
+            placeholder="輸入帳號"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            maxLength={30}
+            autoComplete="username"
+          />
 
-        <button style={btnPrimary} disabled={loading}>
-          {loading ? '處理中…' : (mode==='login' ? '登入' : '建立帳號')}
-        </button>
-        <button type="button" style={btnSecondary}
-                onClick={()=>setMode(mode==='login'?'register':'login')}>
-          {mode==='login'?'切換到註冊':'切換到登入'}
-        </button>
+          <label className="auth-label auth-label-row">
+            <span>密碼</span>
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() => setShowPass((s) => !s)}
+              aria-label="顯示/隱藏密碼"
+            >
+              {showPass ? "隱藏" : "顯示"}
+            </button>
+          </label>
+          <input
+            className="auth-input"
+            placeholder="輸入密碼"
+            type={showPass ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            maxLength={50}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+          />
 
-        {msg && <p style={errMsg}>{msg}</p>}
-      </form>
-    </main>
-  )
-}
+          {err && <div className="auth-error">{err}</div>}
 
-const page = {
-  minHeight:'100svh',
-  display:'grid',
-  placeItems:'center',
-  background:'#0e0e0e',
-  padding:'24px',
+          <button className="auth-btn primary" disabled={loading}>
+            {loading ? "處理中…" : mode === "login" ? "登入" : "建立帳號"}
+          </button>
+
+          <button
+            type="button"
+            className="auth-btn ghost"
+            onClick={() => { setErr(""); setMode(mode === "login" ? "register" : "login"); }}
+            disabled={loading}
+          >
+            {mode === "login" ? "切換到註冊" : "已有帳號？前往登入"}
+          </button>
+
+          <footer className="auth-footer">
+            <span>© {new Date().getFullYear()} TOPZ</span>
+          </footer>
+        </form>
+      </main>
+    </div>
+  );
 }
-const card = {
-  width:'min(420px, 92vw)',
-  background:'#1b1b1b',
-  color:'#fff',
-  padding:'20px',
-  borderRadius:'14px',
-  boxShadow:'0 10px 40px rgba(0,0,0,.5)',
-}
-const title = { margin:'0 0 12px 0', textAlign:'center' }
-const label = { fontSize:12, opacity:.8, marginTop:10, display:'block' }
-const input = {
-  width:'100%',
-  marginTop:6,
-  padding:'12px',
-  borderRadius:10,
-  border:'1px solid #333',
-  background:'#0f0f0f',
-  color:'#fff',
-  outline:'none',
-}
-const btnPrimary = {
-  marginTop:16, width:'100%', padding:'12px',
-  borderRadius:10, border:'none', background:'#2b6cb0', color:'#fff', cursor:'pointer'
-}
-const btnSecondary = {
-  marginTop:10, width:'100%', padding:'12px',
-  borderRadius:10, border:'none', background:'#555', color:'#fff', cursor:'pointer'
-}
-const errMsg = { color:'#e55', marginTop:10, textAlign:'center' }
