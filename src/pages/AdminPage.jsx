@@ -1,7 +1,7 @@
 // src/pages/AdminPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import "../styles/ui.css";
+
 
 export default function AdminPage() {
   const [token, setToken] = useState(() => sessionStorage.getItem("ADMIN_TOKEN") || "");
