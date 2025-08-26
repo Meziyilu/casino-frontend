@@ -16,33 +16,8 @@ async function req(path, opt = {}) {
 }
 
 export const api = {
-  // auth
   register: (data) => req("/auth/register", { method: "POST", body: JSON.stringify(data) }),
   login:    (data) => req("/auth/login",    { method: "POST", body: JSON.stringify(data) }),
-
-  // lobby
   lobbySummary: () => req("/lobby/summary"),
-
-  // admin
-  adminStats:  (token) => req("/admin/stats",  { headers: { "X-Admin-Token": token } }),
-  adminUsers:  (token, body) => req("/admin/users", {
-    method: "POST",
-    headers: { "X-Admin-Token": token },
-    body: JSON.stringify(body),
-  }),
-  adminGrant:  (token, uid, amount) => req(`/admin/users/${uid}/grant`, {
-    method: "POST", headers: { "X-Admin-Token": token },
-    body: JSON.stringify({ amount }),
-  }),
-  adminSetBal: (token, uid, balance) => req(`/admin/users/${uid}/set-balance`, {
-    method: "POST", headers: { "X-Admin-Token": token },
-    body: JSON.stringify({ balance }),
-  }),
-  adminResetPw:(token, uid, new_password) => req(`/admin/users/${uid}/reset-password`, {
-    method: "POST", headers: { "X-Admin-Token": token },
-    body: JSON.stringify({ new_password }),
-  }),
-  adminDelete: (token, uid) => req(`/admin/users/${uid}`, {
-    method: "DELETE", headers: { "X-Admin-Token": token },
-  }),
+  // …（若有 admin API 也放這裡）
 };
